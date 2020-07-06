@@ -7,24 +7,25 @@ import sys
 import time
 
 class Logger():
-    def __init__(self, filepath=None, prefix=''):
-        try:
-            self.log_file = open(filepath, 'w')
-        except FileNotFoundError as e:
-            print(e)
-            self.log_file = sys.stdout
+    def __init__(self, filepath=None, logfile=sys.stdout, prefix=''):
+        self.log_file = logfile
+        if logfile is not None:
+            self.log_file=logfile
+        elif filepath is not None:
+            try:
+                self.log_file = open(filepath, 'w')
+            except FileNotFoundError as e:
+                print(e)
         self.prefix = '[' + prefix + '{}]'
     
     def __del__(self):
         self.log_file.close()
 
-    def print(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs):
         print(
             self.prefix.format( time.strftime("%Y-%m-%d_%H:%M:%S") ),
-            *content,
+            *args,
             **kwargs,
             file=self.log_file, 
             flush=True
         )
-
-    self.__call__ = self.print

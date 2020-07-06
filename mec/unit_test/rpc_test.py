@@ -11,6 +11,7 @@ ip = '192.168.1.99'
 def start_worker():
     worker = rpc.SyncRpcWorker(ip, '9001', '9002', 1)
     worker.registerMethod(lambda x,y,z: len(x)+len(y)+len(z), 'a.b.c')
+    worker.registerMethod(lambda x,y,z: x+y+z, 'all.add')
     worker.startLoop()
 
 def start_controller():
@@ -19,6 +20,7 @@ def start_controller():
     print( controller.a('a') )
     print( controller.a.b("123") )
     print( controller.a.b.c("123", [4, 'abc', 3.875], {1: 5, 666:(254, 'aba')}) )
+    print( controller.all.add( 8, 9, 10) )
     print( controller.stopLoop() )
     
     

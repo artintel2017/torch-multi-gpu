@@ -44,7 +44,7 @@ class _Method:
         self.__setattr__(name, method) 
         return method 
     def __call__(self, *args, **kwargs): 
-        return self.__send( (self.__name, args, kwargs) )  
+        return self.__send(self.__name, *args, **kwargs)  
 
 class SyncRpcController(SyncRpcBase):
     """
@@ -59,7 +59,7 @@ class SyncRpcController(SyncRpcBase):
         self.closeSocket()
 
     def __getattr__(self, name):
-        method = _Method(name, self.broadcastMessage, self.printToLog)
+        method = _Method(name, self.callMethod, self.printToLog)
         self.__setattr__(name, method)
         return method
 
@@ -82,14 +82,20 @@ class SyncRpcController(SyncRpcBase):
             self.report_socket.unbind(self.report_addr)
             self.report_socket = None
 
+    def callMethod(self, name, *args, **kwargs):
+        """
+            调用工作者的方法，并获取返回值
+        """
+        self.broadcastMessage( (name, args, kwargs) )
+        return self.gatherMessages()
+
     def broadcastMessage(self, msg):
         """
             将消息广播至所有的工作者
         """
+        print("message:", msg)
         self.publish_socket.send( repr(msg).encode() )
-        result = []
-        return self.gatherMessages()
-
+    
     def gatherMessages(self):
         """
             从所有的工作者汇集消息
@@ -111,9 +117,7 @@ class SyncRpcWorker(SyncRpcBase):
         self.printToLog = logger
         self.function_dict = {}
         self.is_working = False
-        self.registerMethod(
-            self.stopLoop
-        )
+        self.registerMethod(self.stopLoop)
 
     def __del__(self):
         self.closeSocket()
@@ -154,12 +158,12 @@ class SyncRpcWorker(SyncRpcBase):
     def excecuteMethod(self, func_name, args, kwargs):
         if func_name in self.function_dict:
             self.printToLog("excecuting function: [func name] {}; [args] {}; [kwargs] {}".format(
-                repr(func_name), repr(args), repr(kwargs)
-            ))
+                func_name, args, kwargs )
+            )
             return self.function_dict[func_name](*args, **kwargs)
         else:
             self.printToLog("warning: wrong function name. [func name] {}; [args] {}; [kwargs] {}".format(
-                repr(func_name), repr(args), repr(kwargs)
+                func_name, args, kwargs
             ))
             return None
 
