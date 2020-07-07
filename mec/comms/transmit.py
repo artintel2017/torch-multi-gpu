@@ -39,9 +39,14 @@ class DistEnv:
         """
         return dist.new_group(rank_list)
 
+# 用于cube all-reduce的分配函数
+def cube_correspond(n, turn):
+    return (1<<turn)^n
+
 class TensorTransmittor:
-    def __init__(self, logger=print):
-        self.printToLog = logger
+    def __init__(self, default_group, logger=print):
+        self.printToLog    = logger
+        self.default_group = default_group
         
     def _optiParams(self, optimizer):
         """
@@ -58,15 +63,17 @@ class TensorTransmittor:
             return var.parameters()
         elif isinstance(var, torch.optim.Optimizer):
             return self._optiParams(var)
-        else: 
-            self.printToLog("warning: unknown param type, not one of [Tensor, Parameter, Module, Optimizer]")
+        elif isinstance(var, (list, tuple)):
             return var
+        else: 
+            self.printToLog("Error: unknown param type, not one of [Tensor, Parameter, Module, Optimizer]")
+            raise(Exception("Error: unknown param type in TensorTransmittor._getParamGen()"))
     
     def crossGrads(self, params, group=None, style='full', async_op=False):
         """
             参数:
             params: Tensor、Parametor、Module、Optimizer
-            style选择：
+            style选择：(目前仅实现了full)
                 full:    普通 all-reduce, n*(n-1)
                 ring:    ring all-reduce, n-1, spread
                 cube:    cube all-reduce, n-1
@@ -75,7 +82,7 @@ class TensorTransmittor:
         """
         param_generator = self._getParamGen(params)
         if group is None:
-            group = _get_default_group()
+            group = self.default_group
         if style=='full':
             for param in param_generator:
                 dist.all_reduce(
@@ -102,11 +109,11 @@ class TensorTransmittor:
         """
         param_generator = self._getParamGen(params)
         if group is None:
-            group = _get_default_group()
+            group = self.default_group
         if style=='full':
             for param in param_generator:
                 dist.all_reduce(
-                    param, 
+                    param.data, 
                     group=group, 
                     op=dist.ReduceOp.SUM, 
                     async_op=async_op)
@@ -116,5 +123,49 @@ class TensorTransmittor:
             self.printToLog("warining: style {} not supported")
             return
         if async_op: dist.barrier()        
-        pass
+
+    def broadcastTensors(self, params, src_rank, group=None, async_op=False):
+        """
+        从src_rank进程将params复制至其他进程
+        参数:
+            params: Tensor、Parametor、Module、Optimizer
+            style选择：
+                full:    普通 all-reduce, n*(n-1)
+                ring:    ring all-reduce, n-1, spread
+                cube:    cube all-reduce, n-1
+                partial: cube partial-reduce, log2(n)
+        """
+        param_generator = self._getParamGen(params)
+        if group is None:
+            group = self.default_group
+        for param in param_generator:
+            dist.broadcast(
+                param.data, 
+                src=src_rank, 
+                group=group, 
+                async_op=async_op)
+        if async_op: dist.barrier()   
+
+    def meanGatherTensors(self, params, dst_rank, group=None, async_op=False):
+        """
+        求取group中所有进程的params的平均值，结果存至dst_rank进程
+            参数:
+            params: Tensor、Parametor、Module、Optimizer
+            group: 参与的组
+        """
+        param_generator = self._getParamGen(params)
+        if group is None:
+            group = self.default_group
+        for param in param_generator:
+            dist.reduce(
+                param.data, 
+                dst=dst_rank,
+                group=group, 
+                op=dist.ReduceOp.SUM,
+                async_op=async_op)
+        if dist.get_rank() == dst_rank:
+            for param in param_generator:
+                param.data /= group.size()
+        if async_op: dist.barrier() 
+        
         

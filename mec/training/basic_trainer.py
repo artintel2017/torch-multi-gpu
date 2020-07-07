@@ -2,9 +2,9 @@
 # created: CS
 # 基本的训练类
 
+import torch
 
-
-class Trainer():
+class BasicTrainer():
     """
         Trainer类
         封装训练中的各个步骤
@@ -25,8 +25,9 @@ class Trainer():
         # ----- temporary figures -----
         self.loss   = 0
         self.met    = 0
-
-    def zero_grad(self):
+    
+    def initEpoch(self):
+        self.metrics.init()
         self.optimizer.zero_grad()
 
     def forwardData(self, data):
@@ -62,3 +63,9 @@ class Trainer():
 
     def getScores(self):
         return self.loss.item(), self.met
+    
+    def saveModel(self, filename):
+        torch.save(self.model.state_dict(), filename)
+        
+    def loadModel(self, filename, map_location=None):
+        self.model.load_state_dict(torch.load(filename, map_location=map_location))

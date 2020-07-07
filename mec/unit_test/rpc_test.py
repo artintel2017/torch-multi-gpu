@@ -3,8 +3,9 @@
 # 测试rpc组件
 
 import time
-import mec.comms.sync_rpc as rpc
 import torch.multiprocessing as mp
+
+import mec.comms.sync_rpc as rpc
 
 ip = '192.168.1.99'
 

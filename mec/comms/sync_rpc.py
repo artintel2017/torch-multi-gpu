@@ -6,7 +6,7 @@
 
 
 import zmq
-import sys
+import time
 
 
 # ----------------------------- 同步RPC -----------------------------
@@ -15,7 +15,7 @@ import sys
 
 
 class SyncRpcBase:
-    def __init__(self, server_ip, publish_port, report_port, worker_num, logger):
+    def __init__(self, server_ip, publish_port, report_port, logger):
         self.printToLog = logger
         #
         self.context        = None
@@ -24,7 +24,6 @@ class SyncRpcBase:
         self.report_addr    = "tcp://" + server_ip + ":" + report_port
         self.report_socket  = None
         self.logger         = logger
-        self.worker_num     = worker_num
         self.initSocket()
 
     def __del__(self):
@@ -52,7 +51,7 @@ class SyncRpcController(SyncRpcBase):
     """
     def __init__(self, server_ip, publish_port, report_port, worker_num, logger=print):
         #
-        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, worker_num, logger)
+        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, logger)
         self.printToLog = logger
 
     def __del__(self):
@@ -95,6 +94,13 @@ class SyncRpcController(SyncRpcBase):
         """
         print("message:", msg)
         self.publish_socket.send( repr(msg).encode() )
+        
+    def recieveSingleMessage(self):
+        """
+            从工作者收集信息
+            一次只收集一个
+        """
+        return eval(self.report_socket.recv().decode())
     
     def gatherMessages(self):
         """
@@ -106,18 +112,32 @@ class SyncRpcController(SyncRpcBase):
         for i in range(self.worker_num):
             result_list.append( eval(self.report_socket.recv().decode()) )
         return result_list
+    
+    def detectWorkers(self):
+        self.broadcastMessage( ('detectRespond', [], {}) )
+        self.printToLog('waiting for workers to respond')
+        time.sleep(1)
+        result_list = []
+        while True:
+            try:
+                result_list.append(self.report_socket.recv(zmq.NOBLOCK))
+            except zmq.ZMQError as e:
+                break
+        self.worker_num = len(result_list)
+        return self.worker_num
 
 class SyncRpcWorker(SyncRpcBase):
     """
         同步RPC客户端
     """
 
-    def __init__(self, server_ip, publish_port, report_port, worker_num, logger=print):
-        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, worker_num, logger)
+    def __init__(self, server_ip, publish_port, report_port, logger=print):
+        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, logger)
         self.printToLog = logger
         self.function_dict = {}
         self.is_working = False
         self.registerMethod(self.stopLoop)
+        self.registerMethod(self.detectRespond)
 
     def __del__(self):
         self.closeSocket()
@@ -166,6 +186,9 @@ class SyncRpcWorker(SyncRpcBase):
                 func_name, args, kwargs
             ))
             return None
+        
+    def detectRespond(self):
+        return '1'
 
     def startLoop(self):
         self.is_working = True

@@ -31,6 +31,12 @@ class Monitor():
         self.bar1 = None
         self.bar2 = None
         if show: self._initBars()
+        # --------------- data ---------------
+        self.avg_loss     = 0
+        self.avg_met      = 0
+        self.avg_val_loss = 0
+        self.avg_val_met  = 9
+
     
     def __del__(self):
         if not self.is_closed:
@@ -69,6 +75,8 @@ class Monitor():
                 self.metric_name, loss, avg_loss, met, avg_met
             ) # format
         )
+        self.avg_loss = avg_loss
+        self.avg_met  = avg_met
         
     def updateValidation(self, val_loss, avg_val_loss, val_met, avg_val_met):
         self.bar2.update()   
@@ -79,8 +87,14 @@ class Monitor():
                 self.metric_name, val_loss, avg_val_loss, val_met, avg_val_met
             ) 
         ) 
+        self.avg_val_loss = avg_val_loss
+        self.avg_val_met  = avg_val_met
 
-    def updateEpoch(self, avg_loss, avg_val_loss, avg_met, avg_val_met):
+    def updateEpoch(self, avg_loss=None, avg_val_loss=None, avg_met=None, avg_val_met=None):
+        avg_loss     = self.avg_loss     if avg_loss     is None else avg_loss     
+        avg_met      = self.avg_met      if avg_met      is None else avg_met      
+        avg_val_loss = self.avg_val_loss if avg_val_loss is None else avg_val_loss 
+        avg_val_met  = self.avg_val_met  if avg_val_met  is None else avg_val_met  
         self.current_epoch       += 1
         self.current_train_batch  = 0
         self.current_val_batch    = 0
