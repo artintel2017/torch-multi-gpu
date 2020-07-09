@@ -9,13 +9,9 @@ train_set = None
 
 
 def main():
-    start_workers(...)
-    controller = start_controller()
-    if train:
-        start_train()
+    pass
 
 
 
-
-if __name__ == '__main__'
+if __name__ == '__main__':
     main()

@@ -9,14 +9,12 @@ import time
 class Logger():
     def __init__(self, filepath=None, logfile=sys.stdout, prefix=''):
         self.log_file = logfile
-        if logfile is not None:
-            self.log_file=logfile
-        elif filepath is not None:
+        if filepath is not None:
             try:
                 self.log_file = open(filepath, 'w')
             except FileNotFoundError as e:
                 print(e)
-        self.prefix = '[' + prefix + '{}]'
+        self.prefix = '[' + prefix + '|{}]'
     
     def __del__(self):
         self.log_file.close()
@@ -26,6 +24,6 @@ class Logger():
             self.prefix.format( time.strftime("%Y-%m-%d_%H:%M:%S") ),
             *args,
             **kwargs,
-            file=self.log_file, 
-            flush=True
+            file=self.log_file#,
+            #flush=True
         )

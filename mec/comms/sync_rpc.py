@@ -12,6 +12,9 @@ import time
 # ----------------------------- 同步RPC -----------------------------
 # 多个server对应一个client
 
+test_signal   = 'test'
+good_signal   = 'good'
+
 
 
 class SyncRpcBase:
@@ -51,8 +54,21 @@ class SyncRpcController(SyncRpcBase):
     """
     def __init__(self, server_ip, publish_port, report_port, worker_num, logger=print):
         #
-        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, logger)
         self.printToLog = logger
+        self.printToLog('initiating synchronized rpc controller')        
+        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, logger)
+        self.worker_num = worker_num
+        # self check
+        self._WaitPubSockReady()
+        self.printToLog('publishing socket ready')
+        while True:
+            detected_worker_num = self._detectWorkers()
+            if detected_worker_num==worker_num: break
+        self.printToLog('workers ready')
+        # if detected_worker_num<=0:
+        #     self.printToLog('warning: no workers detected')
+        # if worker_num!=detected_worker_num:
+        #     self.printToLog('warning: designated worker number mismatch')
 
     def __del__(self):
         self.closeSocket()
@@ -67,10 +83,17 @@ class SyncRpcController(SyncRpcBase):
         self.printToLog("publish  addr = '{}'".format(self.publish_addr) )
         self.printToLog("report   addr = '{}'".format(self.report_addr) )
         self.context       = zmq.Context()
+        # publish socket
         self.publish_socket = self.context.socket(zmq.PUB)
         self.publish_socket.bind(self.publish_addr)
+        # report socket
         self.report_socket = self.context.socket(zmq.PULL)
         self.report_socket.bind(self.report_addr)
+        # self check socket
+        self.check_sub_socket = self.context.socket(zmq.SUB)
+        self.check_sub_socket.connect(self.publish_addr)
+        self.check_sub_socket.setsockopt(zmq.SUBSCRIBE, b'')
+        self.printToLog("socket initizating complete")
 
     def closeSocket(self):
         self.printToLog("closing socket")
@@ -80,19 +103,25 @@ class SyncRpcController(SyncRpcBase):
         if self.report_socket != None:
             self.report_socket.unbind(self.report_addr)
             self.report_socket = None
+        if self.check_sub_socket != None:
+            self.check_sub_socket.disconnect(self.publish_addr)
+            self.check_sub_socket = None
 
     def callMethod(self, name, *args, **kwargs):
         """
             调用工作者的方法，并获取返回值
         """
+        self.printToLog("calling: ", (name, args, kwargs) )
         self.broadcastMessage( (name, args, kwargs) )
-        return self.gatherMessages()
+        result = self.gatherMessages()
+        self.printToLog("result: ", result)
+        return result
 
     def broadcastMessage(self, msg):
         """
             将消息广播至所有的工作者
         """
-        print("message:", msg)
+        self.printToLog("message sent:", msg)
         self.publish_socket.send( repr(msg).encode() )
         
     def recieveSingleMessage(self):
@@ -110,11 +139,24 @@ class SyncRpcController(SyncRpcBase):
         """
         result_list = []
         for i in range(self.worker_num):
-            result_list.append( eval(self.report_socket.recv().decode()) )
+            result_list.append( eval(self.report_socket.recv(0).decode()) )
         return result_list
+
+    def _WaitPubSockReady(self):
+        while True:
+            self.publish_socket.send(repr(test_signal).encode())
+            try:
+                result = self.check_sub_socket.recv(zmq.NOBLOCK)
+                if result is not None:
+                    result = eval(result.decode())
+                self.printToLog('message: ',result)
+                if result == test_signal: break
+            except zmq.ZMQError:
+                self.printToLog('not ready')
+            time.sleep(0.5)
     
-    def detectWorkers(self):
-        self.broadcastMessage( ('detectRespond', [], {}) )
+    def _detectWorkers(self):
+        self.broadcastMessage( ('detectRespond', (), {}) )
         self.printToLog('waiting for workers to respond')
         time.sleep(1)
         result_list = []
@@ -123,8 +165,13 @@ class SyncRpcController(SyncRpcBase):
                 result_list.append(self.report_socket.recv(zmq.NOBLOCK))
             except zmq.ZMQError as e:
                 break
-        self.worker_num = len(result_list)
-        return self.worker_num
+        self.printToLog('respond:', result_list)
+        correct_respond_count = 0
+        for respond in result_list:
+            if eval(respond)==good_signal: correct_respond_count+=1
+        self.worker_num = correct_respond_count
+        self.printToLog('{} workers detected'.format(self.worker_num))
+        return correct_respond_count
 
 class SyncRpcWorker(SyncRpcBase):
     """
@@ -180,24 +227,28 @@ class SyncRpcWorker(SyncRpcBase):
             self.printToLog("excecuting function: [func name] {}; [args] {}; [kwargs] {}".format(
                 func_name, args, kwargs )
             )
-            return self.function_dict[func_name](*args, **kwargs)
+            result = self.function_dict[func_name](*args, **kwargs)
         else:
             self.printToLog("warning: wrong function name. [func name] {}; [args] {}; [kwargs] {}".format(
                 func_name, args, kwargs
             ))
-            return None
-        
+            result = None
+        self.printToLog('result: ', result)
+        return result
+                
     def detectRespond(self):
-        return '1'
+        return good_signal
 
     def startLoop(self):
         self.is_working = True
         while self.is_working:
             msg = self.recieveBroadcast()
+            if msg==test_signal: continue
+            self.printToLog("message recieved: ", msg)
             func_name, func_args, func_kwargs = msg
             result = self.excecuteMethod(func_name, func_args, func_kwargs)
             self.reportMessage(result)
             
     def stopLoop(self):
         self.is_working = False
-        return 'OK'
+        return good_signal
