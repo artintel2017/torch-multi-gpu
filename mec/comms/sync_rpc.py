@@ -96,7 +96,8 @@ class SyncRpcController(SyncRpcBase):
         self.printToLog("socket initizating complete")
 
     def closeSocket(self):
-        self.printToLog("closing socket")
+        if not self.printToLog.closed:
+            self.printToLog("closing socket")
         if self.publish_socket != None:
             self.publish_socket.unbind(self.publish_addr)
             self.publish_socket = None

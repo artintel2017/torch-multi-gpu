@@ -86,13 +86,13 @@ class WorkerSync():
         self.rpc_proxy.registerMethod(self.batchTrainNoUpdate)
         self.rpc_proxy.registerMethod(self.updateWeights) 
         # ------------ validation methods ------------
-        self.rpc_proxy.registerMethod(self.initValidEpoch)
-        self.rpc_proxy.registerMethod(self.batchValidate)
+        self.rpc_proxy.registerMethod(self.initTestEpoch)
+        self.rpc_proxy.registerMethod(self.batchTest)
         # ------------ saving methods ------------
         self.rpc_proxy.registerMethod(self.saveModelWeights)
         self.rpc_proxy.registerMethod(self.loadModelWeights)
         # init rpc proxy last, after all preparations are ready
-        self.printToLog('workers ready')
+        self.printToLog('workers ready') 
     
     def startLoop(self):
         self.rpc_proxy.startLoop()
@@ -178,7 +178,7 @@ class WorkerSync():
         self.trainer.updateWeights()
         
     # validation methods ----------------------------------
-    def initValidEpoch(self, dataset_name, epoch):
+    def initTestEpoch(self, dataset_name, epoch):
         self.printToLog("initizating validation epoch {}".format(epoch))
         valid_loader = self.dataloader_dict[dataset_name]
         valid_loader.sampler.set_epoch(epoch)
@@ -200,7 +200,7 @@ class WorkerSync():
         #     self.trainer.calcScores(target)
         #     self._returnScore('valid_batch', batch, len(data), *self.trainer.getScores())
             
-    def batchValidate(self):
+    def batchTest(self):
         self.printToLog("validation batch {}".format(self.valid_batch_index))
         data, target = next(self.valid_iter)
         batch_sample_num = len(target)
@@ -283,13 +283,13 @@ class ControllerSync():
     def updateWeights(self):
         self.rpcWorkers.updateWeights()
 
-    def initValidEpoch(self, dataset_name, epoch):
+    def initTestEpoch(self, dataset_name, epoch):
         self.printToLog("initiating validation epoch {}".format(epoch))
-        self.rpcWorkers.initValidEpoch(dataset_name, epoch)
+        self.rpcWorkers.initTestEpoch(dataset_name, epoch)
 
-    def batchValidate(self, batch_index):
+    def batchTest(self, batch_index):
         self.printToLog("validation batch {}".format(batch_index))
-        return self.rpcWorkers.batchValidate()
+        return self.rpcWorkers.batchTest()
 
     def saveModelWeights(self, filename, rank=1, rank_list=[-1]):
         self.rpcWorkers.saveModelWeights(filename, rank=1, rank_list=[-1])
@@ -328,13 +328,13 @@ class ControllerSync():
             total_avg_met  = total_met /total_sample_num
             self.monitor.updateTraining(batch_loss, total_avg_loss, batch_met, total_avg_met)
     
-    def validEpoch(self, epoch, dataset_name='valid'):
-        self.initValidEpoch(dataset_name, epoch)
+    def testEpoch(self, epoch, dataset_name='valid'):
+        self.initTestEpoch(dataset_name, epoch)
         total_val_sample_num = 0
         total_val_loss       = 0
         total_val_met        = 0
         for val_batch_index in range(self.valid_loader_len):
-            result_list = self.batchValidate(val_batch_index)
+            result_list = self.batchTest(val_batch_index)
             batch_val_sample_num = 0
             batch_val_total_loss = 0 
             batch_val_total_met  = 0
@@ -361,34 +361,11 @@ class ControllerSync():
     def loadModel(self, filename, rank):
         self.rpcWorkers.loadModelWeights(filename=filename, rank=rank)
     
-# ========================== 
-def trainAndVal(
-            train_set, valid_set, metrics, 
-            batch_size, lr_scheduler, 
-            control_ip, publish_port, report_port, sync_worker_num,
-            data_workers_per_process,
-            init_epoch, total_epochs, 
-            current_model_filename, best_model_filename,
-            history_filename):
-    controller = ControllerSync(
-        len(train_set), len(valid_set), batch_size,
-        init_epoch, total_epochs, str(metrics),
-        lr_scheduler, control_ip, publish_port, report_port, sync_worker_num,
-        current_model_filename, best_model_filename,
-        history_filename
-    )
-    try:
-        for epoch in range(init_epoch, init_epoch+total_epochs):
-            controller.trainEpoch(epoch)
-            controller.validEpoch(epoch)
-            controller.endEpoch()
-    except Exception as e:
-        controller.printToLog(e)
-        controller.stopWorkers()
-        return
-    controller.stopWorkers()
-
-
+    def loadHistory(self, filename):
+        try:
+            with
+    
+# ========================== # ==========================
 def startWorkerProcess(
         model, optimizer, criterion, metrics,
         dataset_dict, batch_transform_dict,
@@ -430,4 +407,31 @@ def startWorkers(
         worker_process = mp.Process(target=startWorkerProcess, args=args)
         worker_pool.append(worker_process)
         worker_process.start()
+
+# ==========================  ========================== 
+def trainAndValLocal(
+            train_set, valid_set, metrics, 
+            batch_size, lr_scheduler, 
+            control_ip, publish_port, report_port, sync_worker_num,
+            data_workers_per_process,
+            init_epoch, total_epochs, 
+            current_model_filename, best_model_filename,
+            history_filename):
+    controller = ControllerSync(
+        len(train_set), len(valid_set), batch_size,
+        init_epoch, total_epochs, str(metrics),
+        lr_scheduler, control_ip, publish_port, report_port, sync_worker_num,
+        current_model_filename, best_model_filename,
+        history_filename
+    )
+    try:
+        for epoch in range(init_epoch, init_epoch+total_epochs):
+            controller.trainEpoch(epoch)
+            controller.testEpoch(epoch)
+            controller.endEpoch()
+    except Exception as e:
+        print(e)
+        controller.stopWorkers()
+        return
+    controller.stopWorkers()
     

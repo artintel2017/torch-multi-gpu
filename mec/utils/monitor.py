@@ -90,6 +90,27 @@ class Monitor():
         self.avg_val_loss = avg_val_loss
         self.avg_val_met  = avg_val_met
 
+    def beginEpoch(self):
+        self.current_train_batch  = 0
+        self.current_val_batch    = 0
+        reset_tqdm(self.bar1)
+        reset_tqdm(self.bar2)        
+        pass
+    
+    def endEpoch(self, avg_loss=None, avg_val_loss=None, avg_met=None, avg_val_met=None):
+        avg_loss     = self.avg_loss     if avg_loss     is None else avg_loss     
+        avg_met      = self.avg_met      if avg_met      is None else avg_met      
+        avg_val_loss = self.avg_val_loss if avg_val_loss is None else avg_val_loss 
+        avg_val_met  = self.avg_val_met  if avg_val_met  is None else avg_val_met   
+        self.current_epoch       += 1
+        self.bar0.update()
+        self.bar0.set_description_str('epoch:{:4d}/{:4d}'.format(self.current_epoch, self.init_epoch+self.total_epochs))
+        self.bar0.set_postfix_str(
+            " t_los={1:.3f}, t_acc={2:.3f}| v_los={3:.3f}, v_{0}={4:.3f}".format(
+                self.metric_name, avg_loss, avg_met, avg_val_loss, avg_val_met
+            )
+        )
+
     def updateEpoch(self, avg_loss=None, avg_val_loss=None, avg_met=None, avg_val_met=None):
         avg_loss     = self.avg_loss     if avg_loss     is None else avg_loss     
         avg_met      = self.avg_met      if avg_met      is None else avg_met      
