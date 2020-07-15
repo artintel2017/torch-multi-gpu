@@ -15,7 +15,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from mec.data_manip.metrics import Accuracy
-from mec.training.sync_trainer import startWorkers, trainAndVal
+from mec.training.sync_trainer import startWorkers, trainAndValLocal
 
 # 测试数据集
 from torchvision.datasets import CIFAR10
@@ -68,8 +68,8 @@ control_ip        = "192.168.1.99" # manager的IP
 publish_port      = '8700'
 report_port       = '8701'
 dist_port         = '12500'
-worker_gpu_ids    = [0,1,2,3] # worker所使用的gpu编号 [0,1,2,3]
-worker_ranks      = [0,1,2,3] # worker本身编号 [0,1,2,3]
+worker_gpu_ids    = [0,1,2] # worker所使用的gpu编号 [0,1,2,3]
+worker_ranks      = [0,1,2] # worker本身编号 [0,1,2,3]
 sync_worker_num   = len(worker_ranks)         # 总worker数，单机的情况等于上两者的长度
 norm = None
 
@@ -152,7 +152,7 @@ def main():
             worker_ranks, worker_gpu_ids, 
             control_ip, publish_port, report_port, dist_port
         )
-        trainAndVal(
+        trainAndValLocal(
             train_set, valid_set, metrics, #评价函数
             batch_size, lr_scheduler, 
             control_ip, publish_port, report_port, sync_worker_num,

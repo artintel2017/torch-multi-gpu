@@ -21,7 +21,7 @@ def start_worker():
     worker.registerMethod(lambda x,y,z: len(x)+len(y)+len(z), 'a.b.c')
     worker.registerMethod(lambda x,y,z: x+y+z, 'all.add')
     worker.registerMethod(test)
-    worker.startLoop()
+    worker.mainLoop()
 
 def start_controller():
     controller = rpc.SyncRpcController(ip, '9001', '9002')

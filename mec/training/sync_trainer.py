@@ -48,19 +48,6 @@ class WorkerSync():
             prefix   ='worker_{}; gpu_{}'.format(rank, gpu_id)
         )
         self.printToLog("initiating worker {} ...".format(rank))
-        self.device          = torch.device('cuda:{}'.format(gpu_id))
-        self.sync_worker_num = sync_worker_num
-        self.world_size      = sync_worker_num
-        self.model           = model #.to(self.device)
-        self.model.to(self.device)
-        self.trainer         = BasicTrainer(model, optimizer, criterion, metrics)
-        self.rank            = rank
-        self.printToLog("rank:", rank)
-        self.printToLog("device:", self.device)
-        self.env             = DistEnv(rank, self.world_size, control_ip, dist_port, self.printToLog)
-        self.default_group   = self.env.newGroup(range(self.world_size))
-        self.transmittor     = TensorTransmittor(list(range(self.world_size)) , logger=self.printToLog)
-
         self.dataset_dict = dataset_dict
         self.batch_transform_dict = batch_transform_dict
         batch_size_per_worker = int(batch_size/self.world_size)
@@ -75,7 +62,25 @@ class WorkerSync():
             )
             for dataset_name in dataset_dict
         }
-        self.printToLog('data loader ready')
+        self.printToLog("initiating device")
+        self.device          = torch.device('cuda:{}'.format(gpu_id))
+        self.printToLog("device:", self.device)
+        self.rank            = rank
+        self.printToLog("rank:", rank)
+        self.sync_worker_num = sync_worker_num
+        self.printToLog("worker num :", sync_worker_num)
+        self.world_size      = sync_worker_num
+        self.printToLog("initiating model")
+        self.model           = model #.to(self.device)
+        self.model.to(self.device)
+        self.printToLog("initiating trainer")
+        self.trainer         = BasicTrainer(model, optimizer, criterion, metrics)
+        self.printToLog("initiating torch.distributed environment")        
+        self.env             = DistEnv(rank, self.world_size, control_ip, dist_port, self.printToLog)
+        self.default_group   = self.env.newGroup(range(self.world_size))
+        self.printToLog("initiating transmittor")
+        self.transmittor     = TensorTransmittor(list(range(self.world_size)) , logger=self.printToLog)
+        self.printToLog("initialing rpc proxy")
         self.rpc_proxy = SyncRpcWorker(control_ip, publish_port, report_port, self.printToLog)
         self.rpc_proxy.registerMethod(self.averagingGrads)
         self.rpc_proxy.registerMethod(self.averagingWeights)
@@ -95,7 +100,7 @@ class WorkerSync():
         self.printToLog('workers ready') 
     
     def startLoop(self):
-        self.rpc_proxy.startLoop()
+        self.rpc_proxy.mainLoop()
 
     def _returnScore(self, flag, batch, sample_num, loss, met):
         respond = {
@@ -362,8 +367,9 @@ class ControllerSync():
         self.rpcWorkers.loadModelWeights(filename=filename, rank=rank)
     
     def loadHistory(self, filename):
-        try:
-            with
+        pass
+        #try:
+        #    with
     
 # ========================== # ==========================
 def startWorkerProcess(
@@ -424,6 +430,7 @@ def trainAndValLocal(
         current_model_filename, best_model_filename,
         history_filename
     )
+    time.sleep(10)
     try:
         for epoch in range(init_epoch, init_epoch+total_epochs):
             controller.trainEpoch(epoch)
@@ -431,7 +438,6 @@ def trainAndValLocal(
             controller.endEpoch()
     except Exception as e:
         print(e)
+    finally:
         controller.stopWorkers()
-        return
-    controller.stopWorkers()
     

@@ -14,18 +14,23 @@ import time
 
 test_signal   = 'test'
 good_signal   = 'good'
+check_signal  = 'check'
+quit_signal   = 'quit'
+start_signal  = 'start'
 
 
 
 class SyncRpcBase:
-    def __init__(self, server_ip, publish_port, report_port, logger):
+    def __init__(self, server_ip, port, logger):
         self.printToLog = logger
         #
         self.context        = None
-        self.publish_addr   = "tcp://" + server_ip + ":" + publish_port
+        self.publish_addr   = "tcp://{}:{}".format(server_ip,port)
         self.publish_socket = None
-        self.report_addr    = "tcp://" + server_ip + ":" + report_port
+        self.report_addr    = "tcp://{}:{}".format(server_ip,port+1)
         self.report_socket  = None
+        self.check_addr     = "tcp://{}:{}".format(server_ip,port+2)
+        self.check_socket   = None
         self.logger         = logger
         self.initSocket()
 
@@ -52,29 +57,24 @@ class SyncRpcController(SyncRpcBase):
     """
         同步RPC服务端
     """
-    def __init__(self, server_ip, publish_port, report_port, worker_num, logger=print):
+    def __init__(self, server_ip, port, worker_num, logger=print):
         #
         self.printToLog = logger
         self.printToLog('initiating synchronized rpc controller')        
-        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, logger)
+        SyncRpcBase.__init__(self, server_ip, port, logger)
         self.worker_num = worker_num
+        # check workers
         # self check
         self._WaitPubSockReady()
         self.printToLog('publishing socket ready')
-        while True:
-            detected_worker_num = self._detectWorkers()
-            if detected_worker_num==worker_num: break
-        self.printToLog('workers ready')
-        # if detected_worker_num<=0:
-        #     self.printToLog('warning: no workers detected')
-        # if worker_num!=detected_worker_num:
-        #     self.printToLog('warning: designated worker number mismatch')
+        self.is_working = False
+        self.is_looping = False
 
     def __del__(self):
         self.closeSocket()
 
     def __getattr__(self, name):
-        method = _Method(name, self.callMethod, self.printToLog)
+        method = _Method(name, self._callMethod, self.printToLog)
         self.__setattr__(name, method)
         return method
 
@@ -90,49 +90,56 @@ class SyncRpcController(SyncRpcBase):
         self.report_socket = self.context.socket(zmq.PULL)
         self.report_socket.bind(self.report_addr)
         # self check socket
-        self.check_sub_socket = self.context.socket(zmq.SUB)
-        self.check_sub_socket.connect(self.publish_addr)
-        self.check_sub_socket.setsockopt(zmq.SUBSCRIBE, b'')
+        self.self_check_sub_socket = self.context.socket(zmq.SUB)
+        self.self_check_sub_socket.connect(self.publish_addr)
+        self.self_check_sub_socket.setsockopt(zmq.SUBSCRIBE, b'')
+        # workers check socket
+        self.check_socket = self.context.socket(zmq.REQ)
+        self.check_socket.bind(self.check_addr)
+        # 
         self.printToLog("socket initizating complete")
 
     def closeSocket(self):
-        if not self.printToLog.closed:
-            self.printToLog("closing socket")
+        self.printToLog("closing socket ...")
         if self.publish_socket != None:
             self.publish_socket.unbind(self.publish_addr)
             self.publish_socket = None
         if self.report_socket != None:
             self.report_socket.unbind(self.report_addr)
             self.report_socket = None
-        if self.check_sub_socket != None:
-            self.check_sub_socket.disconnect(self.publish_addr)
-            self.check_sub_socket = None
+        if self.self_check_sub_socket != None:
+            self.self_check_sub_socket.disconnect(self.publish_addr)
+            self.self_check_sub_socket = None
+        if self.check_socket !=None:
+            self.check_socket.unbind(self.check_addr)
+            self.check_socket = None
+        self.printToLog("socket closed")
 
-    def callMethod(self, name, *args, **kwargs):
+    def _callMethod(self, name, *args, **kwargs):
         """
             调用工作者的方法，并获取返回值
         """
         self.printToLog("calling: ", (name, args, kwargs) )
-        self.broadcastMessage( (name, args, kwargs) )
-        result = self.gatherMessages()
+        self._broadcastMessage( (name, args, kwargs) )
+        result = self._gatherMessages()
         self.printToLog("result: ", result)
         return result
 
-    def broadcastMessage(self, msg):
+    def _broadcastMessage(self, msg):
         """
             将消息广播至所有的工作者
         """
         self.printToLog("message sent:", msg)
         self.publish_socket.send( repr(msg).encode() )
         
-    def recieveSingleMessage(self):
+    def _recieveSingleMessage(self):
         """
             从工作者收集信息
             一次只收集一个
         """
         return eval(self.report_socket.recv().decode())
     
-    def gatherMessages(self):
+    def _gatherMessages(self):
         """
             从所有的工作者汇集消息
             等候直到所有的工作者消息汇总完毕
@@ -147,45 +154,83 @@ class SyncRpcController(SyncRpcBase):
         while True:
             self.publish_socket.send(repr(test_signal).encode())
             try:
-                result = self.check_sub_socket.recv(zmq.NOBLOCK)
+                result = self.self_check_sub_socket.recv(zmq.NOBLOCK)
                 if result is not None:
                     result = eval(result.decode())
                 self.printToLog('message: ',result)
                 if result == test_signal: break
             except zmq.ZMQError:
                 self.printToLog('not ready')
-            time.sleep(0.5)
+            time.sleep(1)
     
-    def _detectWorkers(self):
-        self.broadcastMessage( ('detectRespond', (), {}) )
-        self.printToLog('waiting for workers to respond')
-        time.sleep(1)
-        result_list = []
-        while True:
-            try:
-                result_list.append(self.report_socket.recv(zmq.NOBLOCK))
-            except zmq.ZMQError as e:
-                break
-        self.printToLog('respond:', result_list)
-        correct_respond_count = 0
-        for respond in result_list:
-            if eval(respond)==good_signal: correct_respond_count+=1
-        self.worker_num = correct_respond_count
-        self.printToLog('{} workers detected'.format(self.worker_num))
-        return correct_respond_count
+    def _sendControlSignal(self, signal):
+        if self.is_working:
+            self.printToLog('warning! sending control signal in working status')
+            return
+        workers_set = set()
+        while len(workers_set)<self.worker_num:
+            self.printToLog('sending control signal')
+            self.check_socket.send(repr(signal).encode() )
+            self.printToLog('waiting for worker respond')
+            rank = eval(self.check_socket.recv().decode())
+            self.printToLog('worker respond got, rank {}'.format(rank))
+            assert type(rank) is int, 'check respond signal error, should be int'
+            assert rank<self.worker_num and rank>=0, \
+                'worker respond rank exceeds limit, worker num {}, get {}'.format(
+                self.worker_num, rank)
+            assert not rank in workers_set, 'worker ranks repeated: rank {}'.format(rank)
+            workers_set.add(rank)
+    
+    def startWorking(self):
+        self._sendControlSignal(start_signal)
+        self.is_working = True
+        #self.is_looping = True
+    
+    def stopWorking(self):
+        self._callMethod('stopWorking')
+        self.is_working = False
+    
+    def stopLooping(self):
+        if self.is_working:
+            self._broadcastMessage(('stopLooping', (), {}))
+        else:
+            self._sendControlSignal(quit_signal)
+        self.is_working = False
+        #self.is_looping = False
+            
+    
+    # def _detectWorkers(self):
+    #     self.broadcastMessage( ('detectRespond', (), {}) )
+    #     self.printToLog('waiting for workers to respond')
+    #     time.sleep(1)
+    #     result_list = []
+    #     while True:
+    #         try:
+    #             result_list.append(self.report_socket.recv(zmq.NOBLOCK))
+    #         except zmq.ZMQError as e:
+    #             break
+    #     self.printToLog('respond:', result_list)
+    #     correct_respond_count = 0
+    #     for respond in result_list:
+    #         if eval(respond)==good_signal: correct_respond_count+=1
+    #     self.worker_num = correct_respond_count
+    #     self.printToLog('{} workers detected'.format(self.worker_num))
+    #     return correct_respond_count
 
 class SyncRpcWorker(SyncRpcBase):
     """
         同步RPC客户端
     """
-
-    def __init__(self, server_ip, publish_port, report_port, logger=print):
-        SyncRpcBase.__init__(self, server_ip, publish_port, report_port, logger)
+    def __init__(self, server_ip, port, rank, logger=print):
+        SyncRpcBase.__init__(self, server_ip, port, logger)
         self.printToLog = logger
+        self.rank = rank
         self.function_dict = {}
         self.is_working = False
-        self.registerMethod(self.stopLoop)
-        self.registerMethod(self.detectRespond)
+        self.is_looping = False
+        self.registerMethod(self.stopWorking)
+        self.registerMethod(self.stopLooping)
+        #self.registerMethod(self.detectRespond)
 
     def __del__(self):
         self.closeSocket()
@@ -194,12 +239,18 @@ class SyncRpcWorker(SyncRpcBase):
         self.printToLog("initilzating socket:")
         self.printToLog("publish addr = '{}'".format(self.publish_addr) )
         self.printToLog("report  addr = '{}'".format(self.report_addr) )
+        self.printToLog("check   addr = '{}'".format(self.check_addr) )
         self.context       = zmq.Context()
+        # publish socket
         self.publish_socket   = self.context.socket(zmq.SUB)
         self.publish_socket.connect(self.publish_addr)
         self.publish_socket.setsockopt(zmq.SUBSCRIBE, b'')
+        # report socket
         self.report_socket  = self.context.socket(zmq.PUSH)
         self.report_socket.connect(self.report_addr)
+        # workers check socket
+        self.check_socket = self.context.socket(zmq.REP)
+        self.check_socket.connect(self.check_addr)
 
     def closeSocket(self):
         if self.publish_socket != None:
@@ -208,6 +259,9 @@ class SyncRpcWorker(SyncRpcBase):
         if self.report_socket != None:
             self.report_socket.disconnect(self.report_addr)
             self.report_socket = None
+        if self.check_socket !=None:
+            self.check_socket.disconnect(self.check_addr)
+            self.check_socket = None
 
     def recieveBroadcast(self):
         return eval(self.publish_socket.recv().decode())
@@ -237,19 +291,42 @@ class SyncRpcWorker(SyncRpcBase):
         self.printToLog('result: ', result)
         return result
                 
-    def detectRespond(self):
-        return good_signal
+    # def detectRespond(self):
+    #     return good_signal
 
-    def startLoop(self):
+    def waitControlSignal(self):
+        self.printToLog('waiting for control signal' )
+        signal = eval(self.check_socket.recv().decode())
+        self.printToLog('controller signal recieved: \"{}\"'.format(signal))
+        self.printToLog('returning respond for control signal ...' )
+        self.check_socket.send( repr(self.rank).encode() )
         self.is_working = True
-        while self.is_working:
-            msg = self.recieveBroadcast()
-            if msg==test_signal: continue
-            self.printToLog("message recieved: ", msg)
-            func_name, func_args, func_kwargs = msg
-            result = self.excecuteMethod(func_name, func_args, func_kwargs)
-            self.reportMessage(result)
-            
-    def stopLoop(self):
+        return signal
+
+    def mainLoop(self):
+        #self.is_working = False
+        self.is_looping = True
+        while self.is_looping:
+            signal = self.waitControlSignal()
+            if signal == quit_signal:
+                self.is_looping = False
+                break
+            elif signal==start_signal:
+                self.printToLog('start working loop')
+                while self.is_working:
+                    self.printToLog("waiting for task message")
+                    msg = self.recieveBroadcast()
+                    self.printToLog("message recieved: \"{}\"".format(msg) )
+                    if msg==test_signal: continue
+                    func_name, func_args, func_kwargs = msg
+                    result = self.excecuteMethod(func_name, func_args, func_kwargs)
+                    self.reportMessage(result)
+    
+    def stopWorking(self):
+        self.is_working = False
+        return good_signal
+    
+    def stopLooping(self):
+        self.is_looping = False
         self.is_working = False
         return good_signal
