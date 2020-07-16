@@ -27,9 +27,9 @@ class SyncRpcBase:
         self.context        = None
         self.publish_addr   = "tcp://{}:{}".format(server_ip,port)
         self.publish_socket = None
-        self.report_addr    = "tcp://{}:{}".format(server_ip,port+1)
+        self.report_addr    = "tcp://{}:{}".format(server_ip, port+1 )
         self.report_socket  = None
-        self.check_addr     = "tcp://{}:{}".format(server_ip,port+2)
+        self.check_addr     = "tcp://{}:{}".format(server_ip, port+2 )
         self.check_socket   = None
         self.logger         = logger
         self.initSocket()
@@ -57,10 +57,10 @@ class SyncRpcController(SyncRpcBase):
     """
         同步RPC服务端
     """
-    def __init__(self, server_ip, port, worker_num, logger=print):
+    def __init__(self, server_ip, port, worker_num, logger=lambda *x: print('[controller]', *x) ):
         #
         self.printToLog = logger
-        self.printToLog('initiating synchronized rpc controller')        
+        self.printToLog('initiating synchronized rpc controller')
         SyncRpcBase.__init__(self, server_ip, port, logger)
         self.worker_num = worker_num
         # check workers
@@ -148,6 +148,7 @@ class SyncRpcController(SyncRpcBase):
         result_list = []
         for i in range(self.worker_num):
             result_list.append( eval(self.report_socket.recv(0).decode()) )
+            print(i+1, "results recieved")
         return result_list
 
     def _WaitPubSockReady(self):
@@ -169,9 +170,9 @@ class SyncRpcController(SyncRpcBase):
             return
         workers_set = set()
         while len(workers_set)<self.worker_num:
-            self.printToLog('sending control signal')
+            self.printToLog('sending control signal, current worker num: ',len(workers_set))
             self.check_socket.send(repr(signal).encode() )
-            self.printToLog('waiting for worker respond')
+            #self.printToLog('waiting for worker respond')
             rank = eval(self.check_socket.recv().decode())
             self.printToLog('worker respond got, rank {}'.format(rank))
             assert type(rank) is int, 'check respond signal error, should be int'
@@ -180,6 +181,7 @@ class SyncRpcController(SyncRpcBase):
                 self.worker_num, rank)
             assert not rank in workers_set, 'worker ranks repeated: rank {}'.format(rank)
             workers_set.add(rank)
+            time.sleep(0.2)
     
     def startWorking(self):
         self._sendControlSignal(start_signal)
@@ -192,11 +194,11 @@ class SyncRpcController(SyncRpcBase):
     
     def stopLooping(self):
         if self.is_working:
-            self._broadcastMessage(('stopLooping', (), {}))
+            self._callMethod('stopLooping')
         else:
             self._sendControlSignal(quit_signal)
         self.is_working = False
-        #self.is_looping = False
+        self.is_looping = False
             
     
     # def _detectWorkers(self):
@@ -223,7 +225,8 @@ class SyncRpcWorker(SyncRpcBase):
     """
     def __init__(self, server_ip, port, rank, logger=print):
         SyncRpcBase.__init__(self, server_ip, port, logger)
-        self.printToLog = logger
+        self.printToLog = lambda *x: print('[worker {}]'.format(rank), *x)
+        #self.printToLog = logger
         self.rank = rank
         self.function_dict = {}
         self.is_working = False
@@ -295,12 +298,13 @@ class SyncRpcWorker(SyncRpcBase):
     #     return good_signal
 
     def waitControlSignal(self):
-        self.printToLog('waiting for control signal' )
+        self.printToLog('waiting for control signal, rank {}'.format(self.rank) )
         signal = eval(self.check_socket.recv().decode())
         self.printToLog('controller signal recieved: \"{}\"'.format(signal))
-        self.printToLog('returning respond for control signal ...' )
+        self.printToLog('respond control signal, rank {}'.format(self.rank) )
+        #time.sleep(0.2)
         self.check_socket.send( repr(self.rank).encode() )
-        self.is_working = True
+        self.printToLog('respond sent: {}'.format(self.rank) )
         return signal
 
     def mainLoop(self):
@@ -313,6 +317,7 @@ class SyncRpcWorker(SyncRpcBase):
                 break
             elif signal==start_signal:
                 self.printToLog('start working loop')
+                self.is_working = True
                 while self.is_working:
                     self.printToLog("waiting for task message")
                     msg = self.recieveBroadcast()
@@ -321,6 +326,7 @@ class SyncRpcWorker(SyncRpcBase):
                     func_name, func_args, func_kwargs = msg
                     result = self.excecuteMethod(func_name, func_args, func_kwargs)
                     self.reportMessage(result)
+        self.printToLog('exiting')
     
     def stopWorking(self):
         self.is_working = False

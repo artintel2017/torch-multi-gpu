@@ -81,7 +81,7 @@ class WorkerSync():
         self.printToLog("initiating transmittor")
         self.transmittor     = TensorTransmittor(list(range(self.world_size)) , logger=self.printToLog)
         self.printToLog("initialing rpc proxy")
-        self.rpc_proxy = SyncRpcWorker(control_ip, publish_port, report_port, self.printToLog)
+        self.rpc_proxy = SyncRpcWorker(control_ip, publish_port, rank, self.printToLog)
         self.rpc_proxy.registerMethod(self.averagingGrads)
         self.rpc_proxy.registerMethod(self.averagingWeights)
         self.rpc_proxy.registerMethod(self.broadCastModelWeights)
@@ -99,7 +99,7 @@ class WorkerSync():
         # init rpc proxy last, after all preparations are ready
         self.printToLog('workers ready') 
     
-    def startLoop(self):
+    def mainLoop(self):
         self.rpc_proxy.mainLoop()
 
     def _returnScore(self, flag, batch, sample_num, loss, met):
@@ -253,7 +253,8 @@ class ControllerSync():
             prefix   ='controller'
         )
         # 控制接口
-        self.rpcWorkers   = SyncRpcController(control_ip, publish_port, report_port, sync_worker_num, self.printToLog)
+        self.rpcWorkers   = SyncRpcController(control_ip, publish_port, sync_worker_num, self.printToLog)
+        self.rpcWorkers.startWorking()
         # 数据
         self.train_set_len    = train_set_len
         self.valid_set_len    = valid_set_len
@@ -264,7 +265,9 @@ class ControllerSync():
         self.metric_name  = metric_name
         self.monitor      = Monitor(init_epoch, total_epochs, self.train_loader_len, self.valid_loader_len, metric_name)
     
-            
+    def __del__(self):
+        self.rpcWorkers.stopWorking()
+    
     def averagingGrads(self, style='full'):
         self.rpcWorkers.averagingGrads(style='full')
 
@@ -387,7 +390,7 @@ def startWorkerProcess(
         sync_worker_num, control_ip,
         publish_port, report_port, dist_port)
     time.sleep(3)
-    worker.startLoop()
+    worker.mainLoop()
 
 def startWorkers(
         model, optimizer, criterion, metrics, 
@@ -430,7 +433,6 @@ def trainAndValLocal(
         current_model_filename, best_model_filename,
         history_filename
     )
-    time.sleep(10)
     try:
         for epoch in range(init_epoch, init_epoch+total_epochs):
             controller.trainEpoch(epoch)
@@ -438,6 +440,5 @@ def trainAndValLocal(
             controller.endEpoch()
     except Exception as e:
         print(e)
-    finally:
-        controller.stopWorkers()
+    controller.stopLooping()
     
