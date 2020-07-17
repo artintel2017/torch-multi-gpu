@@ -58,19 +58,17 @@ batch_size        = 512
 learning_rate     = 1e-3
 static_lr         = False
 epochs            = 1
-data_worker_num  = 8                       # 每个DataLoader启用的进程数
+process_num_per_loader   = 8                       # 每个DataLoader启用的进程数
 path              = 'results/temp'
 history_file_name = 'history.json'
 model_file_name   = 'current_model.pth'
 best_model_fname  = 'best_model.pth'
 excel_filename    = 'scores.xls'
 control_ip        = "192.168.1.99" # manager的IP
-publish_port      = '8700'
-report_port       = '8701'
-dist_port         = '12500'
+basic_port        = 8700
 worker_gpu_ids    = [0,1,2] # worker所使用的gpu编号 [0,1,2,3]
 worker_ranks      = [0,1,2] # worker本身编号 [0,1,2,3]
-sync_worker_num   = len(worker_ranks)         # 总worker数，单机的情况等于上两者的长度
+model_worker_num   = len(worker_ranks)         # 总worker数，单机的情况等于上两者的长度
 norm = None
 
 parser = argparse.ArgumentParser()
@@ -148,15 +146,14 @@ def main():
         startWorkers(
             model, opt, criterion, metrics, 
             train_set, valid_set, 
-            batch_size, sync_worker_num, data_worker_num,
+            batch_size, model_worker_num, process_num_per_loader,
             worker_ranks, worker_gpu_ids, 
-            control_ip, publish_port, report_port, dist_port
+            control_ip, basic_port
         )
         trainAndValLocal(
             train_set, valid_set, metrics, #评价函数
             batch_size, lr_scheduler, 
-            control_ip, publish_port, report_port, sync_worker_num,
-            data_worker_num,
+            control_ip, basic_port, model_worker_num,
             init_epoch, epochs, 
             model_file_name, best_model_fname,
             history_file_name)    
