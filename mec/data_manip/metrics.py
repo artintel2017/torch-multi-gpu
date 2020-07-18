@@ -15,11 +15,11 @@ class MetricBase():
         return self.getBatchScore(), self.getEpochScore()
         
     def __str__(self):
-        return self.getMetricName()
+        return self.name()
         
     # 可重载
     # 定义评价标准的名字
-    def getMetricName(self):
+    def name(self):
         return 'met'
     
     # 应重载

@@ -128,4 +128,5 @@ class Monitor():
         )
         reset_tqdm(self.bar1)
         reset_tqdm(self.bar2)
+
                    

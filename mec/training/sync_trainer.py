@@ -4,6 +4,7 @@
 
 
 
+import json
 import os
 from rpc_test import worker_num
 import time
@@ -17,6 +18,7 @@ from ..comms.sync_rpc import SyncRpcWorker, SyncRpcController
 from ..comms.transmit import DistEnv, TensorTransmittor
 from ..utils.logs import Logger
 from ..utils.monitor import Monitor
+from ..utils.history import History
 
 class WorkerSync():
     """
@@ -44,12 +46,12 @@ class WorkerSync():
                  batch_size, process_num_per_loader,
                  rank, gpu_id, sync_worker_num, control_ip='127.0.0.1',
                  port=12500):
-        rpc_port  = port
-        dist_port = str(port+10)
         self.printToLog = Logger(
             filepath ='logs/worker_{}.log'.format(rank),
-            prefix   ='worker_{}; gpu_{}'.format(rank, gpu_id)
+            prefix   ='worker_{}|gpu_{}'.format(rank, gpu_id)
         )
+        rpc_port  = port
+        dist_port = str(port+10)
         self.printToLog("initiating worker {} ...".format(rank))
         self.dataset_dict = dataset_dict
         self.batch_transform_dict = batch_transform_dict
@@ -57,7 +59,6 @@ class WorkerSync():
         self.printToLog("worker num :", sync_worker_num)
         self.world_size      = sync_worker_num
         self.printToLog('initiating data loader ...')
-        self.pid = os.getpid()
         self.dataloader_dict = {
             dataset_name: DataLoader(
                 dataset_dict[dataset_name],
@@ -68,7 +69,6 @@ class WorkerSync():
             )
             for dataset_name in dataset_dict
         }
-        print('pid = {}, older pid = {}'.format(os.getpid(), self.pid))
         #if self.pid != os.getpid(): return # sub processes forked by Dataloader
         self.printToLog("initiating device")
         self.device          = torch.device('cuda:{}'.format(gpu_id))
@@ -107,16 +107,16 @@ class WorkerSync():
     def mainLoop(self):
         self.rpc_server.mainLoop()
 
-    def _returnScore(self, flag, batch, sample_num, loss, met):
-        respond = {
-            'flag'   : flag,
-            'batch'  : batch,
-            'samples': sample_num,
-            'loss'   : loss,
-            'met'    : met
-        }
-        self.printToLog(repr(respond)[1:-2])
-        self.rpc_server.reportMessage(respond)
+    # def _returnScore(self, flag, batch, sample_num, loss, met):
+    #     respond = {
+    #         'flag'   : flag,
+    #         'batch'  : batch,
+    #         'samples': sample_num,
+    #         'loss'   : loss,
+    #         'met'    : met
+    #     }
+    #     self.printToLog(repr(respond)[1:-2])
+    #     self.rpc_server.reportMessage(respond)
         
     # data communicating --------------------------
     def averagingWeights(self, style='full'):
@@ -141,11 +141,11 @@ class WorkerSync():
         """
         self.transmittor.meanGatherTensors(self.trainer.model, rank, group)
     
-    def broadCastModelWeights(self, rank, group):
+    def broadCastModelWeights(self, rank, group=None):
         """
             从一个进程向其他进程广播模型权重
         """
-        self.transmittor.broadcastTensors(self.trainer.model, rank, )
+        self.transmittor.broadcastTensors(self.trainer.model, rank, group)
         
     # training methods ----------------------------
     def initTrainEpoch(self, dataset_name, epoch, lr):
@@ -227,19 +227,26 @@ class WorkerSync():
         return batch_sample_num, loss, met
      
     # ------------ saving methods ------------
-    def saveModelWeights(self, filename, rank=1, rank_list=[-1]):
+    def saveModelWeights(self, filename, rank=0, rank_list=[-1]):
         """
             指定位置保存当前模型权重
         """
         if self.rank == rank or self.rank in rank_list:
             self.trainer.saveModel(filename)
     
-    def loadModelWeights(self, filename, rank=1, rank_list=[-1]):
+    def loadModelWeights(self, filename, rank=0, rank_list=[-1]):
         """
             从指定位置读取模型权重
         """
-        if self.rank == rank or self.rank in rank_list:
-            self.trainer.loadModel(filename, map_location=self.device)
+        self.printToLog("filename={}, rank={}".format(filename, rank) )
+        if self.rank==rank or self.rank in rank_list:
+            if not os.path.exists(filename): 
+                self.printToLog('warning: no model weight file found')
+                return 
+            try:
+                self.trainer.loadModel(filename, map_location=self.device)
+            except Exception as e:
+                self.printToLog(e)
 
     
 class ControllerSync():
@@ -248,9 +255,10 @@ class ControllerSync():
     """
     def __init__(self, 
             train_set_len, valid_set_len, batch_size, 
-            init_epoch, total_epochs, metric_name,
-            lr_scheduler, control_ip, port, sync_worker_num,
-            current_model_filename, best_model_filename, history_filename
+            #init_epoch, total_epochs, metric_name,
+            #lr_scheduler, 
+            control_ip, port, sync_worker_num#,
+            #current_model_filename, best_model_filename, history_filename
         ):
         rpc_port  = port
         dist_port = str(port+10)
@@ -261,80 +269,90 @@ class ControllerSync():
         )
         # 控制接口
         self.rpcWorkers   = SyncRpcController(control_ip, port, sync_worker_num, self.printToLog)
-        self.rpcWorkers.startWorking()
+        #self.rpcWorkers.startWorking()
         # 数据
         self.train_set_len    = train_set_len
         self.valid_set_len    = valid_set_len
         self.train_loader_len = int(np.ceil(train_set_len/batch_size) )
         self.valid_loader_len = int(np.ceil(valid_set_len/batch_size) )
         # 训练
-        self.lr_scheduler = lr_scheduler
-        self.metric_name  = metric_name
-        self.monitor      = Monitor(init_epoch, total_epochs, self.train_loader_len, self.valid_loader_len, metric_name)
+        #self.lr_scheduler = lr_scheduler
+        #self.metric_name  = metric_name
+        #self.monitor      = Monitor(init_epoch, total_epochs, self.train_loader_len, self.valid_loader_len, metric_name)
+        # 评价
+        self.best_epoch_loss = 1e6
+        self.best_epoch_met  = 0.
     
     def __del__(self):
-        #self.rpcWorkers.stopWorking()
+        #self.rpcWorkers.stopLooping()
         pass
     
-    def averagingGrads(self, style='full'):
-        self.rpcWorkers.averagingGrads(style='full')
+    # def averagingGrads(self, style='full'):
+    #     self.rpcWorkers.averagingGrads(style='full')
 
-    def averagingWeights(self, style='full'):
-        self.rpcWorkers.averagingWeights(style='full')
+    # def averagingWeights(self, style='full'):
+    #     self.rpcWorkers.averagingWeights(style='full')
 
-    def broadCastModelWeights(self, rank, group):
-        self.rpcWorkers.broadCastModelWeights(rank, group)
+    # def broadCastModelWeights(self, rank, group=None):
+    #     self.rpcWorkers.broadCastModelWeights(rank, group)
 
-    def gatherAveragedModelWeights(self, rank, group=None):
-        self.rpcWorkers.gatherAveragedModelWeights(rank, group=None)
+    # def gatherAveragedModelWeights(self, rank, group=None):
+    #     self.rpcWorkers.gatherAveragedModelWeights(rank, group=None)
 
-    def initTrainEpoch(self, dataset_name, epoch, lr):
-        self.printToLog("initiating training epoch {}, lr={}".format(epoch, lr))
-        self.rpcWorkers.initTrainEpoch(dataset_name, epoch, lr)
+    # def initTrainEpoch(self, dataset_name, epoch, lr):
+    #     #self.printToLog("initiating training epoch {}, lr={}".format(epoch, lr))
+    #     self.rpcWorkers.initTrainEpoch(dataset_name, epoch, lr)
 
-    def batchTrainNoUpdate(self, batch_index):
-        self.printToLog("training batch {}".format(batch_index))
-        return self.rpcWorkers.batchTrainNoUpdate()
+    # def batchTrainNoUpdate(self, batch_index):
+    #     #self.printToLog("training batch {}".format(batch_index))
+    #     return self.rpcWorkers.batchTrainNoUpdate()
 
-    def updateWeights(self):
-        self.rpcWorkers.updateWeights()
+    # def updateWeights(self):
+    #     self.rpcWorkers.updateWeights()
 
-    def initTestEpoch(self, dataset_name, epoch):
-        self.printToLog("initiating validation epoch {}".format(epoch))
-        self.rpcWorkers.initTestEpoch(dataset_name, epoch)
+    # def initTestEpoch(self, dataset_name, epoch):
+    #     #self.printToLog("initiating validation epoch {}".format(epoch))
+    #     self.rpcWorkers.initTestEpoch(dataset_name, epoch)
 
-    def batchTest(self, batch_index):
-        self.printToLog("validation batch {}".format(batch_index))
-        return self.rpcWorkers.batchTest()
+    # def batchTest(self):
+    #     #self.printToLog("validation batch {}".format(batch_index))
+    #     return self.rpcWorkers.batchTest()
 
-    def saveModelWeights(self, filename, rank=1, rank_list=[-1]):
-        self.rpcWorkers.saveModelWeights(filename, rank=1, rank_list=[-1])
+    # def saveModelWeights(self, filename, rank=1, rank_list=[-1]):
+    #     self.rpcWorkers.saveModelWeights(filename, rank=1, rank_list=[-1])
 
-    def loadModelWeights(self, filename, rank=1, rank_list=[-1]):
-        self.rpcWorkers.loadModelWeights(filename, rank=1, rank_list=[-1])
+    # def loadModelWeights(self, filename, rank=1, rank_list=[-1]):
+    #     self.rpcWorkers.loadModelWeights(filename, rank=1, rank_list=[-1])
         
+    def startWorking(self):
+        self.rpcWorkers.startWorking()
+    
     def stopWorking(self):
         self.rpcWorkers.stopWorking()
         
     def stopLooping(self):
         self.rpcWorkers.stopLooping()
 
-    def trainEpoch(self, epoch, dataset_name='train'):
-        lr = self.lr_scheduler(epoch)
-        self.initTrainEpoch(dataset_name, epoch, lr)
+    def trainEpoch(self, epoch, lr, dataset_name='train', monitor=None):
+        #lr = self.lr_scheduler(epoch)
+        self.printToLog("initiating training epoch {}; lr={}".format(epoch, lr) )
+        self.rpcWorkers.initTrainEpoch(dataset_name, epoch, lr)
         total_sample_num = 0
         total_loss       = 0
         total_met        = 0
+        total_avg_loss   = 0
+        total_avg_met    = 0
         for batch_index in range(self.train_loader_len):
-            result_list = self.batchTrainNoUpdate(batch_index)
+            self.printToLog("training batch {}".format(batch_index))
+            result_list = self.rpcWorkers.batchTrainNoUpdate()
             #self.averagingGrads()
-            self.updateWeights()
-            self.averagingWeights(style='partial')
+            self.rpcWorkers.updateWeights()
+            self.rpcWorkers.averagingWeights(style='full')
             batch_sample_num = 0
-            batch_total_loss = 0 
+            batch_total_loss = 0
             batch_total_met  = 0
             for sample_num, loss, met in result_list:
-                self.printToLog('single_result: loss={}, {}={}'.format(loss, self.metric_name, met) )
+                self.printToLog('single_result: loss={}, score={}'.format(loss, met) )
                 batch_sample_num += sample_num
                 batch_total_loss += loss * sample_num
                 batch_total_met  += met  * sample_num
@@ -345,20 +363,26 @@ class ControllerSync():
             batch_met  = batch_total_met  / batch_sample_num
             total_avg_loss = total_loss/total_sample_num
             total_avg_met  = total_met /total_sample_num
-            self.monitor.updateTraining(batch_loss, total_avg_loss, batch_met, total_avg_met)
+            if monitor!=None:
+                monitor.updateTraining(batch_loss, total_avg_loss, batch_met, total_avg_met)
+        return total_avg_loss, total_avg_met
     
-    def testEpoch(self, epoch, dataset_name='valid'):
-        self.initTestEpoch(dataset_name, epoch)
+    def testEpoch(self, epoch, dataset_name='valid', monitor=None):
+        self.printToLog("initiating test epoch {}".format(epoch))
+        self.rpcWorkers.initTestEpoch(dataset_name, epoch)
         total_val_sample_num = 0
         total_val_loss       = 0
         total_val_met        = 0
+        total_avg_val_loss       = 0
+        total_avg_val_met        = 0
         for val_batch_index in range(self.valid_loader_len):
-            result_list = self.batchTest(val_batch_index)
+            self.printToLog("test batch {}".format(val_batch_index))
+            result_list = self.rpcWorkers.batchTest()
             batch_val_sample_num = 0
-            batch_val_total_loss = 0 
+            batch_val_total_loss = 0
             batch_val_total_met  = 0
             for val_sample_num, val_loss, val_met in result_list:
-                self.printToLog('single_result: loss={}, {}={}'.format(val_loss, self.metric_name, val_met) )
+                self.printToLog('single_result: loss={}, score={}'.format(val_loss, val_met) )
                 batch_val_sample_num += val_sample_num
                 batch_val_total_loss += val_loss * val_sample_num
                 batch_val_total_met  += val_met  * val_sample_num
@@ -367,23 +391,26 @@ class ControllerSync():
             total_val_met        += batch_val_total_met
             batch_val_loss = batch_val_total_loss / batch_val_sample_num
             batch_val_met  = batch_val_total_met  / batch_val_sample_num
-            total_avg_loss = total_val_loss/total_val_sample_num
-            total_avg_met  = total_val_met /total_val_sample_num
-            self.monitor.updateValidation(batch_val_loss, total_avg_loss, batch_val_met, total_avg_met)
+            total_avg_val_loss = total_val_loss/total_val_sample_num
+            total_avg_val_met  = total_val_met /total_val_sample_num
+            if monitor!=None:
+                monitor.updateValidation(batch_val_loss, total_avg_val_loss, batch_val_met, total_avg_val_met)
+        if total_val_met>self.best_epoch_met or self.best_epoch_met==None:
+            self.is_best_epoch   = True
+            self.best_epoch_loss = total_val_loss
+            self.best_epoch_met  = total_val_met
+        return total_avg_val_loss, total_avg_val_met
     
-    def endEpoch(self):
-        self.monitor.updateEpoch()
+    # def endEpoch(self):
+    #     self.monitor.updateEpoch()
     
-    def saveModel(self, filename, rank):
-        self.rpcWorkers.saveModelWeights(filename=filename, rank=rank)
+    def saveModelWeights(self, filename, rank=0):
+        self.printToLog('saving model')
+        self.rpcWorkers.saveModelWeights(filename, rank)
     
-    def loadModel(self, filename, rank):
-        self.rpcWorkers.loadModelWeights(filename=filename, rank=rank)
-    
-    def loadHistory(self, filename):
-        pass
-        #try:
-        #    with
+    def loadModelWeight(self, filename, rank=0):
+        self.rpcWorkers.loadModelWeights(filename, rank)
+        self.rpcWorkers.broadCastModelWeights(rank)
     
 # ========================== # ==========================
 def startWorkerProcess(
@@ -429,27 +456,46 @@ def startWorkers(
     #     w.join()
 
 # ==========================  ========================== 
-def trainAndValLocal(
+
+
+
+# ==========================  ========================== 
+def trainAndVal(
             train_set, valid_set, metrics, 
             batch_size, lr_scheduler, 
             control_ip, port, model_worker_num,
-            init_epoch, total_epochs, 
+            total_epochs, 
             current_model_filename, best_model_filename,
-            history_filename):
+            history_filename, continue_training=False):
     controller = ControllerSync(
         len(train_set), len(valid_set), batch_size,
-        init_epoch, total_epochs, str(metrics),
-        lr_scheduler, control_ip, port, 
-        model_worker_num,
-        current_model_filename, best_model_filename,
-        history_filename
+        control_ip, port, model_worker_num,
     )
-    try:
-        for epoch in range(init_epoch, init_epoch+total_epochs):
-            controller.trainEpoch(epoch)
-            controller.testEpoch(epoch)
-            controller.endEpoch()
-    except Exception as e:
-        print(e)
+    history = History(history_filename)
+    if continue_training: history.loadHistory()
+    init_epoch = history.data['epochs']
+    monitor = Monitor(
+        init_epoch, 
+        total_epochs, 
+        int(np.ceil(len(train_set)/batch_size) ), 
+        int(np.ceil(len(valid_set)/batch_size) ), 
+        metrics.name()
+    )
+    controller.printToLog('waking workers')
+    controller.startWorking()
+    if continue_training:
+        controller.loadModelWeight(current_model_filename)
+    controller.printToLog('prepare to train')
+    for epoch in range(init_epoch, init_epoch+total_epochs):
+        lr = lr_scheduler(epoch)
+        monitor.beginEpoch()
+        loss, met     = controller.trainEpoch(epoch, lr, 'train', monitor)
+        v_loss, v_met = controller.testEpoch(epoch, 'valid', monitor)
+        controller.saveModelWeights(current_model_filename)
+        if controller.is_best_epoch:
+            controller.saveModelWeights(best_model_filename)
+        monitor.endEpoch()
+        history.updateHistory(loss, met, v_loss, v_met, lr)
+        history.saveHistory()
     controller.stopLooping()
     

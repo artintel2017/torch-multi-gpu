@@ -15,7 +15,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from mec.data_manip.metrics import Accuracy
-from mec.training.sync_trainer import startWorkers, trainAndValLocal
+from mec.training.sync_trainer import startWorkers, trainAndVal
 
 # 测试数据集
 from torchvision.datasets import CIFAR10
@@ -52,7 +52,7 @@ score             = False
 prod              = False
 mix               = False
 deploy            = False
-train_from_init   = True
+continue_training = False
 batch_size        = 512
 #val_split         = 0.2
 learning_rate     = 1e-3
@@ -60,13 +60,13 @@ static_lr         = False
 epochs            = 1
 process_num_per_loader   = 8                       # 每个DataLoader启用的进程数
 path              = 'results/temp'
-history_file_name = 'history.json'
-model_file_name   = 'current_model.pth'
-best_model_fname  = 'best_model.pth'
+history_filename = 'history.json'
+model_filename   = 'current_model.pth'
+best_model_filename  = 'best_model.pth'
 excel_filename    = 'scores.xls'
 control_ip        = "192.168.1.99" # manager的IP
 basic_port        = 8700
-worker_gpu_ids    = [0,1,2] # worker所使用的gpu编号 [0,1,2,3]
+worker_gpu_ids    = [0,1,3] # worker所使用的gpu编号 [0,1,2,3]
 worker_ranks      = [0,1,2] # worker本身编号 [0,1,2,3]
 model_worker_num   = len(worker_ranks)         # 总worker数，单机的情况等于上两者的长度
 norm = None
@@ -108,7 +108,7 @@ if args.mix:
 if args.deploy:
     deploy=True
 if args.continue_training:
-    train_from_init=False
+    continue_training=True
 if args.learning_rate:
     learning_rate = args.learning_rate
     static_lr=True
@@ -116,9 +116,9 @@ if args.epochs:
     epochs = args.epochs
 if args.path:
     path = args.path
-history_file_name    = path + '/' + history_file_name
-model_file_name      = path + '/' + model_file_name
-best_model_fname     = path + '/' + best_model_fname
+history_filename    = path + '/' + history_filename
+model_filename      = path + '/' + model_filename
+best_model_filename     = path + '/' + best_model_filename
 
 # -------------------------------------------------------------------------
 
@@ -150,13 +150,13 @@ def main():
             worker_ranks, worker_gpu_ids, 
             control_ip, basic_port
         )
-        trainAndValLocal(
+        trainAndVal(
             train_set, valid_set, metrics, #评价函数
             batch_size, lr_scheduler, 
             control_ip, basic_port, model_worker_num,
-            init_epoch, epochs, 
-            model_file_name, best_model_fname,
-            history_file_name)    
+            epochs, 
+            model_filename, best_model_filename,
+            history_filename, continue_training)    
   
 
 

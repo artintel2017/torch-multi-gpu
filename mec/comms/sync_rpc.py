@@ -223,10 +223,11 @@ class SyncRpcController(SyncRpcBase):
 
     
     def startWorking(self):
-        self.printToLog('calling all workers to start')
-        self._sendControlSignal(start_signal)
-        self.is_working = True
-        self.is_looping = True
+        if not self.is_working:
+            self.printToLog('calling all workers to start')
+            self._sendControlSignal(start_signal)
+            self.is_working = True
+            self.is_looping = True
     
     def stopWorking(self):
         self._callMethod('stopWorking')
