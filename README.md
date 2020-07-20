@@ -1,4 +1,4 @@
-# 图像深度学习基础部件集
+# 深度学习多卡训练框架
 
 #### 介绍
 本项目的主要功能：
@@ -8,23 +8,24 @@
 #### 软件架构
 软件架构说明
 .
+├── comms      # 通信
+├── configs    # 参数
 ├── data_manip # 数据处理
 ├── scoring    # 结果分析代码
 ├── training   # 训练代码封装
 └── utils      # 各种内部工具
 
-
 #### 安装教程
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1,  git clone xxx
+2.  python setup build
+3.  python setup install
 
 #### 使用说明
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+参见demo.py
+单机可使用trainAndValLocal
+多机可使用startWorkers和trainAndVal
 
 #### 参与贡献
 

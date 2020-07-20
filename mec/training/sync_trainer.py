@@ -19,6 +19,7 @@ from ..comms.transmit import DistEnv, TensorTransmittor
 from ..utils.logs import Logger
 from ..utils.monitor import Monitor
 from ..utils.history import History
+from ..configs.arguments import *
 
 class WorkerSync():
     """
@@ -417,7 +418,11 @@ def startWorkerProcess(
         model, optimizer, criterion, metrics,
         dataset_dict, batch_transform_dict,
         batch_size, process_num_per_loader,
-        rank, gpu_id, sync_worker_num, control_ip, port):
+        rank, gpu_id, 
+        sync_worker_num, 
+        control_ip, 
+        port
+        ):
     torch.cuda.set_device( gpu_id )
     #os.environ['CUDA_VISIBLE_DEVICE']='{}'.format(gpu_id)
     #time.sleep(3)
@@ -432,9 +437,15 @@ def startWorkerProcess(
 def startWorkers(
         model, optimizer, criterion, metrics, 
         train_set, valid_set, 
-        batch_size, sync_worker_num, process_num_per_loader,
-        rank_list, gpu_id_list, control_ip, port, 
-        train_batch_transform=None, valid_batch_transform=None
+        batch_size=batch_size, 
+        sync_worker_num=1, 
+        process_num_per_loader=process_num_per_loader,
+        rank_list=worker_ranks, 
+        gpu_id_list=worker_gpu_ids, 
+        control_ip=control_ip, 
+        port=basic_port, 
+        train_batch_transform=None, 
+        valid_batch_transform=None
     ):
     assert len(rank_list)==len(gpu_id_list), 'rank_list has different length from gpu_id_list'
     assert min(rank_list)>=0,                'rank must be greater than 0'
@@ -452,24 +463,22 @@ def startWorkers(
         worker_process = mp.Process(target=startWorkerProcess, args=args)
         worker_pool.append(worker_process)
         worker_process.start()
-    # for w in worker_pool:
-    #     w.join()
-
-# ==========================  ========================== 
-
-
 
 # ==========================  ========================== 
 def trainAndVal(
             train_set, valid_set, metrics, 
             batch_size, lr_scheduler, 
-            control_ip, port, model_worker_num,
-            total_epochs, 
-            current_model_filename, best_model_filename,
-            history_filename, continue_training=False):
+            control_ip=control_ip, 
+            port=basic_port, 
+            sync_worker_num=sync_worker_num,
+            total_epochs=epochs, 
+            current_model_filename=model_filename, 
+            best_model_filename=best_model_filename,
+            history_filename=history_filename, 
+            continue_training=continue_training):
     controller = ControllerSync(
         len(train_set), len(valid_set), batch_size,
-        control_ip, port, model_worker_num,
+        control_ip, port, sync_worker_num,
     )
     history = History(history_filename)
     if continue_training: history.loadHistory()

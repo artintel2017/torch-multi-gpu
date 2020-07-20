@@ -45,80 +45,18 @@ valid_set = CIFAR10('downloaded_models', train=False, transform=test_transform, 
 # 预训练公开模型
 from torchvision.models.resnet import resnet50, resnet18
 
+from mec.configs.arguments import *
 
-train             = False
-test              = False
-score             = False
-prod              = False
-mix               = False
-deploy            = False
-continue_training = False
-batch_size        = 512
-#val_split         = 0.2
-learning_rate     = 1e-3
-static_lr         = False
-epochs            = 1
-process_num_per_loader   = 8                       # 每个DataLoader启用的进程数
-path              = 'results/temp'
-history_filename = 'history.json'
-model_filename   = 'current_model.pth'
-best_model_filename  = 'best_model.pth'
-excel_filename    = 'scores.xls'
-control_ip        = "192.168.1.99" # manager的IP
-basic_port        = 8700
-worker_gpu_ids    = [0,1,3] # worker所使用的gpu编号 [0,1,2,3]
-worker_ranks      = [0,1,2] # worker本身编号 [0,1,2,3]
-model_worker_num   = len(worker_ranks)         # 总worker数，单机的情况等于上两者的长度
-norm = None
+#print( [(k,eval(k)) for k in dir()] )  
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-train', '--train', action='store_true',
-    help='train model')
-parser.add_argument('-test', '--test', action='store_true',
-    help='evaluate model on test set')
-parser.add_argument('-c', '--continue_training', action='store_true',
-    help='continue training from last point')
-parser.add_argument('-score', '--score', action='store_true',
-    help='calc precision, recall and F1, then write to an excel file')
-parser.add_argument('-prod', '--prod', action='store_true',
-    help='test production per image')
-parser.add_argument('-mix', '--mix', action='store_true',
-    help='output image mix matrix as xlsx file')
-parser.add_argument('-d', '--deploy', action='store_true',
-    help='generate index to wiki_idx json file')
-parser.add_argument('-lr', '--learning_rate', type=float,
-    help='designating statis training rate')
-parser.add_argument('-e', '--epochs', type=int,
-    help='how many epochs to train in this run')
-parser.add_argument('-p', '--path', type=str,
-    help='path to store results')
 
-args = parser.parse_args()
+batch_size             = 512
+process_num_per_loader = 8                    # 每个DataLoader启用的进程数
+worker_gpu_ids         = [0,1,3]              # worker所使用的gpu编号
+worker_ranks           = [0,1,2]              # worker编号
+sync_worker_num       = len(worker_ranks)    # 总worker数，单机的情况等于上两者的长度
 
-if args.train:
-    train=True
-if args.test:
-    test=True
-if args.score:
-    score=True
-if args.prod:
-    prod=True
-if args.mix:
-    mix=True
-if args.deploy:
-    deploy=True
-if args.continue_training:
-    continue_training=True
-if args.learning_rate:
-    learning_rate = args.learning_rate
-    static_lr=True
-if args.epochs:
-    epochs = args.epochs
-if args.path:
-    path = args.path
-history_filename    = path + '/' + history_filename
-model_filename      = path + '/' + model_filename
-best_model_filename     = path + '/' + best_model_filename
+
 
 # -------------------------------------------------------------------------
 
@@ -134,29 +72,23 @@ def main():
     model = resnet18(pretrained=True)
     model.fc = nn.Linear(512, num_classes)
     
-
     opt = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=0.01, nesterov=True)
-    #model.getConfigParams()
     criterion = torch.nn.CrossEntropyLoss()
     metrics = Accuracy()
     lr_scheduler=lambda epoch: learning_rate
 
-    init_epoch=0
     if train:
         startWorkers(
             model, opt, criterion, metrics, 
             train_set, valid_set, 
-            batch_size, model_worker_num, process_num_per_loader,
-            worker_ranks, worker_gpu_ids, 
-            control_ip, basic_port
+            batch_size, sync_worker_num, process_num_per_loader,
+            worker_ranks, worker_gpu_ids
         )
         trainAndVal(
-            train_set, valid_set, metrics, #评价函数
-            batch_size, lr_scheduler, 
-            control_ip, basic_port, model_worker_num,
-            epochs, 
-            model_filename, best_model_filename,
-            history_filename, continue_training)    
+            train_set, valid_set, metrics, 
+            batch_size, lr_scheduler,
+            sync_worker_num=sync_worker_num
+        )    
   
 
 
