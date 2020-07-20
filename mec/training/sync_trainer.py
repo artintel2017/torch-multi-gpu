@@ -6,7 +6,6 @@
 
 import json
 import os
-from rpc_test import worker_num
 import time
 import numpy as np
 import torch
