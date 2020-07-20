@@ -50,7 +50,7 @@ from mec.configs.arguments import *
 #print( [(k,eval(k)) for k in dir()] )  
 
 
-batch_size             = 512
+batch_size             = 256*8
 process_num_per_loader = 8                    # 每个DataLoader启用的进程数
 worker_gpu_ids         = [0,1,3]              # worker所使用的gpu编号
 worker_ranks           = [0,1,2]              # worker编号
