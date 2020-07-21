@@ -156,6 +156,7 @@ class WorkerSync():
         self.trainer.model.train()
         self.train_batch_index = 0
         self.printToLog("initializing train loader iter")
+        self.printToLog('dataloader length: ', self.dataloader_dict[dataset_name])
         train_loader = self.dataloader_dict[dataset_name]
         self.train_iter = iter(train_loader)
         if dataset_name in self.batch_transform_dict:
@@ -333,7 +334,7 @@ class ControllerSync():
     def stopLooping(self):
         self.rpcWorkers.stopLooping()
 
-    def trainEpoch(self, epoch, lr, dataset_name='train', monitor=None):
+    def trainEpoch(self, epoch, lr, dataset_name='train', style='full', monitor=None):
         #lr = self.lr_scheduler(epoch)
         self.printToLog("initiating training epoch {}; lr={}".format(epoch, lr) )
         self.rpcWorkers.initTrainEpoch(dataset_name, epoch, lr)
@@ -347,7 +348,7 @@ class ControllerSync():
             result_list = self.rpcWorkers.batchTrainNoUpdate()
             #self.averagingGrads()
             self.rpcWorkers.updateWeights()
-            self.rpcWorkers.averagingWeights(style='full')
+            self.rpcWorkers.averagingWeights(style=style)
             batch_sample_num = 0
             batch_total_loss = 0
             batch_total_met  = 0
@@ -497,7 +498,7 @@ def trainAndVal(
     for epoch in range(init_epoch, init_epoch+total_epochs):
         lr = lr_scheduler(epoch)
         monitor.beginEpoch()
-        loss, met     = controller.trainEpoch(epoch, lr, 'train', monitor)
+        loss, met     = controller.trainEpoch(epoch, lr, dataset_name='train', style='partial', monitor=monitor)
         v_loss, v_met = controller.testEpoch(epoch, 'valid', monitor)
         controller.saveModelWeights(current_model_filename)
         if controller.is_best_epoch:

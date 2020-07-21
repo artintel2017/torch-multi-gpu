@@ -20,7 +20,7 @@ def start_process(rank, gpu_list):
     env = trans.DistEnv(rank, world_size, control_ip=ip, dist_port=port, logger=log)
     test_group_list = [0,1]
     group = env.newGroup(test_group_list)
-    transmittor = trans.TensorTransmittor(logger=log)
+    transmittor = trans.TensorTransmittor([0,1,2,3],logger=log)
     
     p = torch.nn.Parameter(
         torch.randn(

@@ -54,8 +54,15 @@ class TensorTransmittor:
         self.cube_phase     = 0
         self.def_group_size = len(rank_list)
         self.cube_dim       = int(np.log2(self.def_group_size))
+        # self.printToLog('partial groups:', [
+        #     [self.rank, cube_correspond(self.rank, turn)].sort() if cube_correspond(self.rank, turn)<self.def_group_size
+        #     else dist.new_group([self.rank])
+        #     for turn in range(self.cube_dim)
+        # ],
+        # flush=True
+        # )
         self.partial_groups = [
-            dist.new_group([self.rank, cube_correspond(self.rank, turn)]) if cube_correspond(self.rank, turn)<self.def_group_size
+            dist.new_group([self.rank, cube_correspond(self.rank, turn)].sort()) if cube_correspond(self.rank, turn)<self.def_group_size
             else dist.new_group([self.rank])
             for turn in range(self.cube_dim)
         ]
@@ -105,7 +112,7 @@ class TensorTransmittor:
             for param in param_generator:
                 param.grad /= group.size()
         else:
-            self.printToLog("warining: style {} not supported")
+            self.printToLog("warining: style {} not supported".format(style))
             return
         if async_op: dist.barrier()
     
