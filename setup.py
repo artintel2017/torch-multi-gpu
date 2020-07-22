@@ -1,7 +1,7 @@
 from distutils.core import setup
 
 setup(name='mec',
-      version='1.0',
+      version='1.0.1',
       description='Multi Gpu training Library',
       author='CS',
       author_email='artintel@163.com',
