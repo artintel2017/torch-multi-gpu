@@ -11,7 +11,8 @@ setup(name='mec',
           'mec.comms', 
           'mec.data_manip', 
           'mec.training',
-          'mec.utils'
+          'mec.utils',
+          'mec.configs'
         ],
       install_requires=['zmq', 'torch']
      )

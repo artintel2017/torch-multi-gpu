@@ -19,8 +19,8 @@ from mec.training.sync_trainer import startWorkers, trainAndVal, trainAndValLoca
 
 # 测试数据集
 from torchvision.datasets import CIFAR10
-pre_image_size = (34, 34)
-image_size     = (32, 32)
+pre_image_size = (256, 256)
+image_size     = (224, 224)
 data_transform = transforms.Compose([
     transforms.Resize(pre_image_size),
     transforms.RandomHorizontalFlip(),
@@ -58,8 +58,8 @@ os.environ['NCCL_SOCKET_IFNAME'] = 'eno2'
 process_num_per_loader = 8                    # 每个DataLoader启用的进程数
 worker_gpu_ids         = [0,1,2,3]            # worker所使用的gpu编号
 worker_ranks           = [0,1,2,3]            # worker编号
-sync_worker_num        = 4                    # 总worker数，单机的情况等于上两者的长度
-batch_size             = 512*sync_worker_num
+sync_worker_num        = 8                    # 总worker数，单机的情况等于上两者的长度
+batch_size             = 256*sync_worker_num
 control_ip             = "192.168.1.99"       # manager的IP，如果不设置，则默认127.0.0.1
 
 
@@ -84,28 +84,28 @@ def main():
     lr_scheduler=lambda epoch: learning_rate
 
     if train:
-        trainAndValLocal(
-            model, opt, criterion, metrics, 
-            train_set, valid_set, 
-            batch_size=batch_size, 
-            lr_scheduler = lr_scheduler,
-            process_num_per_loader=process_num_per_loader,
-            rank_list=worker_ranks, 
-            gpu_id_list=worker_gpu_ids
-        )
-        # startWorkers(
+        # trainAndValLocal(
         #     model, opt, criterion, metrics, 
         #     train_set, valid_set, 
-        #     batch_size, sync_worker_num, process_num_per_loader,
-        #     worker_ranks, worker_gpu_ids,
-        #     control_ip=control_ip
+        #     batch_size=batch_size, 
+        #     lr_scheduler = lr_scheduler,
+        #     process_num_per_loader=process_num_per_loader,
+        #     rank_list=worker_ranks, 
+        #     gpu_id_list=worker_gpu_ids
         # )
-        # trainAndVal(
-        #     train_set, valid_set, metrics, 
-        #     batch_size, lr_scheduler,
-        #     sync_worker_num=sync_worker_num,
-        #     control_ip=control_ip
-        # )    
+        startWorkers(
+            model, opt, criterion, metrics, 
+            train_set, valid_set, 
+            batch_size, sync_worker_num, process_num_per_loader,
+            worker_ranks, worker_gpu_ids,
+            control_ip=control_ip
+        )
+        trainAndVal(
+            train_set, valid_set, metrics, 
+            batch_size, lr_scheduler,
+            sync_worker_num=sync_worker_num,
+            control_ip=control_ip
+        )    
   
 
 
