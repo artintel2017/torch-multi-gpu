@@ -1,11 +1,12 @@
 # lr_scheduler.py
 # 创建： CS
-# 修改： 
+# 修改： TM
 # 保存各种学习率策略
 # 所有函数保持函数格式：
 # function_name(epoch) -> lr
 
 import math
+import numpy as np
 
 class CosineLR():
     def __init__(self, warm_epoch=0, lr=0.001, period=30, only_decrease=True):
@@ -59,4 +60,4 @@ class ExponentialLR():
         if epoch < self.warm_epoch:
             return (epoch % self.warm_epoch) / self.warm_epoch * self.lr
         else:
-            return self.lr * (self.rate ** (epoch - self.warm_epoch))
+            return self.lr * np.power(self.rate , (epoch - self.warm_epoch))
