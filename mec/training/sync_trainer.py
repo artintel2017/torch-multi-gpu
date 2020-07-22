@@ -498,7 +498,7 @@ def trainAndVal(
     for epoch in range(init_epoch, init_epoch+total_epochs):
         lr = lr_scheduler(epoch)
         monitor.beginEpoch()
-        loss, met     = controller.trainEpoch(epoch, lr, dataset_name='train', style='partial', monitor=monitor)
+        loss, met     = controller.trainEpoch(epoch, lr, dataset_name='train', style='full', monitor=monitor)
         v_loss, v_met = controller.testEpoch(epoch, 'valid', monitor)
         controller.saveModelWeights(current_model_filename)
         if controller.is_best_epoch:
@@ -508,3 +508,31 @@ def trainAndVal(
         history.saveHistory()
     controller.stopLooping()
     
+def trainAndValLocal(
+        model, optimizer, criterion, metrics, 
+        train_set, valid_set, 
+        batch_size=batch_size, 
+        lr_scheduler = lambda: learning_rate,
+        process_num_per_loader=process_num_per_loader,
+        rank_list=worker_ranks, 
+        gpu_id_list=worker_gpu_ids, 
+        control_ip=control_ip, 
+        port=basic_port, 
+        train_batch_transform=None, 
+        valid_batch_transform=None
+    ):
+    sync_worker_num=len(gpu_id_list)
+    startWorkers(
+        model, optimizer, criterion, metrics, train_set, valid_set, 
+        batch_size, sync_worker_num, process_num_per_loader,
+        rank_list, gpu_id_list, control_ip, port, 
+        train_batch_transform, valid_batch_transform
+    )    
+    trainAndVal(
+            train_set, valid_set, metrics, 
+            batch_size, lr_scheduler, 
+            control_ip=control_ip, 
+            port=port, 
+            sync_worker_num=sync_worker_num
+        )
+    pass

@@ -15,7 +15,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from mec.data_manip.metrics import Accuracy
-from mec.training.sync_trainer import startWorkers, trainAndVal
+from mec.training.sync_trainer import startWorkers, trainAndVal, trainAndValLocal
 
 # 测试数据集
 from torchvision.datasets import CIFAR10
@@ -50,16 +50,17 @@ from mec.configs.arguments import *
 #print( [(k,eval(k)) for k in dir()] )  
 
 
-# 需指定本地使用哪个网卡
-os.environ['NCCL_SOCKET_IFNAME'] = 'eno2'
+# 多机运行时需指定本地使用哪个网卡，否则可能因网络连接速度太慢拖累训练速度
+# 单机训练时不需要此参数，默认指定本地地址127.0.0.1
+os.environ['NCCL_SOCKET_IFNAME'] = 'eno2' 
 #os.environ['NCCL_SOCKET_IFNAME'] = 'eno1np0'
 
 process_num_per_loader = 8                    # 每个DataLoader启用的进程数
-worker_gpu_ids         = [0,1,2,3]              # worker所使用的gpu编号
-worker_ranks           = [0,1,2,3]              # worker编号
-sync_worker_num        = 8                   # 总worker数，单机的情况等于上两者的长度
+worker_gpu_ids         = [0,1,2,3]            # worker所使用的gpu编号
+worker_ranks           = [0,1,2,3]            # worker编号
+sync_worker_num        = 4                    # 总worker数，单机的情况等于上两者的长度
 batch_size             = 512*sync_worker_num
-control_ip             = "192.168.1.99"       # manager的IP
+control_ip             = "192.168.1.99"       # manager的IP，如果不设置，则默认127.0.0.1
 
 
 
@@ -83,19 +84,28 @@ def main():
     lr_scheduler=lambda epoch: learning_rate
 
     if train:
-        startWorkers(
+        trainAndValLocal(
             model, opt, criterion, metrics, 
             train_set, valid_set, 
-            batch_size, sync_worker_num, process_num_per_loader,
-            worker_ranks, worker_gpu_ids,
-            control_ip=control_ip
+            batch_size=batch_size, 
+            lr_scheduler = lr_scheduler,
+            process_num_per_loader=process_num_per_loader,
+            rank_list=worker_ranks, 
+            gpu_id_list=worker_gpu_ids
         )
-        trainAndVal(
-            train_set, valid_set, metrics, 
-            batch_size, lr_scheduler,
-            sync_worker_num=sync_worker_num,
-            control_ip=control_ip
-        )    
+        # startWorkers(
+        #     model, opt, criterion, metrics, 
+        #     train_set, valid_set, 
+        #     batch_size, sync_worker_num, process_num_per_loader,
+        #     worker_ranks, worker_gpu_ids,
+        #     control_ip=control_ip
+        # )
+        # trainAndVal(
+        #     train_set, valid_set, metrics, 
+        #     batch_size, lr_scheduler,
+        #     sync_worker_num=sync_worker_num,
+        #     control_ip=control_ip
+        # )    
   
 
 

@@ -49,7 +49,8 @@ from mec.configs.arguments import *
 
 #print( [(k,eval(k)) for k in dir()] )  
 
-
+# 多机运行时需指定本地使用哪个网卡，否则可能因网络连接速度太慢拖累训练速度
+# 单机训练时不需要此参数，默认指定本地地址127.0.0.1
 os.environ['NCCL_SOCKET_IFNAME'] = 'eno1np0'
 
 process_num_per_loader = 8                    # 每个DataLoader启用的进程数
