@@ -51,6 +51,6 @@ if args.epochs:
     epochs = args.epochs
 if args.path:
     path = args.path
-    history_filename        = os.path.join(path,history_filename)
-    model_filename          = os.path.join(path,model_filename)
-    best_model_filename     = os.path.join(path,best_model_filename)
+history_filename        = os.path.join(path,history_filename)
+model_filename          = os.path.join(path,model_filename)
+best_model_filename     = os.path.join(path,best_model_filename)

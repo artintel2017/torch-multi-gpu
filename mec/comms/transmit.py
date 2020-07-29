@@ -132,8 +132,10 @@ class TensorTransmittor:
         if style=='partial':
             group = self.partial_groups[self.cube_phase]            
             self.cube_phase = (self.cube_phase+1)%self.cube_dim
+        elif style=='full':
+            pass
         else:
-            self.printToLog("warining: style {} not supported")
+            self.printToLog("warining: style {} not supported".format(style))
         for param in param_generator:
             dist.all_reduce(
                 param.data, 

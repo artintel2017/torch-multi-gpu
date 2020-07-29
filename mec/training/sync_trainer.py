@@ -174,7 +174,7 @@ class WorkerSync():
         self.printToLog("getting data")
         data, target = data.to(self.device), target.to(self.device)
         if self.train_batch_transform is not None:
-            print(self.train_batch_transform)
+            self.printToLog(self.train_batch_transform.__name__)
             data, target = self.train_batch_transform(data, target)
         self.printToLog("forwarding")
         self.trainer.forwardData(data)
