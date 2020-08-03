@@ -59,13 +59,20 @@ class WorkerSync():
         self.printToLog("worker num :", sync_worker_num)
         self.world_size      = sync_worker_num
         self.printToLog('initiating data loader ...')
+        # for dataset_name in dataset_dict:
+        #     print(
+        #         "\ndataset_name:", dataset_name, dataset_dict[dataset_name],
+        #         "\nbatch_size:",  int(batch_size/self.world_size),
+        #         "\nsampler:",     DistributedSampler(dataset_dict[dataset_name], sync_worker_num, rank),
+        #         "\nnum_workers:", process_num_per_loader,
+        #     )
         self.dataloader_dict = {
             dataset_name: DataLoader(
                 dataset_dict[dataset_name],
                 batch_size  = int(batch_size/self.world_size),
                 sampler     = DistributedSampler(dataset_dict[dataset_name], sync_worker_num, rank),
-                num_workers = process_num_per_loader#,
-                #pin_memory  = True
+                num_workers = process_num_per_loader,
+                pin_memory  = True
             )
             for dataset_name in dataset_dict
         }
@@ -156,9 +163,15 @@ class WorkerSync():
         self.trainer.model.train()
         self.train_batch_index = 0
         self.printToLog("initializing train loader iter")
-        self.printToLog('dataloader length: ', self.dataloader_dict[dataset_name])
+        self.printToLog('dataloader length: ', len(self.dataloader_dict[dataset_name]) )
+        self.printToLog('dataloader dict: ', self.dataloader_dict)
         train_loader = self.dataloader_dict[dataset_name]
-        self.train_iter = iter(train_loader)
+        self.printToLog('dataloader: ', train_loader)
+        try:
+            self.train_iter = iter(train_loader)
+        except Exception as e:
+            print(e)
+        self.printToLog('dataloader iter', self.train_iter)
         if dataset_name in self.batch_transform_dict:
             self.train_batch_transform = self.batch_transform_dict[dataset_name]
             self.printToLog("setting up batch transforms")
@@ -424,7 +437,7 @@ def startWorkerProcess(
         port
         ):
     torch.cuda.set_device( gpu_id )
-    #os.environ['CUDA_VISIBLE_DEVICE']='{}'.format(gpu_id)
+    os.environ['CUDA_VISIBLE_DEVICE']='{}'.format(gpu_id)
     #time.sleep(3)
     worker = WorkerSync(
         model, optimizer, criterion, metrics, 

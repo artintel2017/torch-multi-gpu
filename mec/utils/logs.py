@@ -24,8 +24,8 @@ class Logger():
             self.prefix.format( time.strftime("%Y-%m-%d_%H:%M:%S") ),
             *args,
             **kwargs,
-            file=self.log_file#,
-            #flush=True
+            file=self.log_file,
+            flush=True
         )
         
     

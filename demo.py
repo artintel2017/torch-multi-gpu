@@ -56,9 +56,13 @@ os.environ['NCCL_SOCKET_IFNAME'] = 'eno2'
 #os.environ['NCCL_SOCKET_IFNAME'] = 'eno1np0'
 
 process_num_per_loader = 8                    # 每个DataLoader启用的进程数
-worker_gpu_ids         = [0,1,2,3]            # worker所使用的gpu编号
-worker_ranks           = [0,1,2,3]            # worker编号
-sync_worker_num        = 8                    # 总worker数，单机的情况等于上两者的长度
+# worker_gpu_ids         = [0,1,2,3]            # worker所使用的gpu编号
+# worker_ranks           = [0,1,2,3]            # worker编号
+# sync_worker_num        = 4                    # 总worker数，单机的情况等于上两者的长度
+
+worker_gpu_ids         = [0]            # worker所使用的gpu编号
+worker_ranks           = [0]            # worker编号
+sync_worker_num        = 1                    # 总worker数，单机的情况等于上两者的长度
 batch_size             = 256*sync_worker_num
 control_ip             = "192.168.1.99"       # manager的IP，如果不设置，则默认127.0.0.1
 
@@ -80,7 +84,9 @@ def main():
     
     opt = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=0.01, nesterov=True)
     criterion = torch.nn.CrossEntropyLoss()
+    print(Accuracy)
     metrics = Accuracy()
+    print(metrics)
     lr_scheduler=lambda epoch: learning_rate
 
     if train:
