@@ -16,19 +16,19 @@ class Logger():
                 print(e)
         self.prefix = '[' + prefix + '|{}]'
     
-    # def __del__(self):
-    #     self.log_file.close()
+    def __del__(self):
+        #self.log_file.close()
+        #self.log_file = sys.stderr
+        pass
 
     def __call__(self, *args, **kwargs):
         print(
             self.prefix.format( time.strftime("%Y-%m-%d_%H:%M:%S") ),
             *args,
             **kwargs,
-            file=self.log_file,
-            flush=True
+            file=self.log_file#,
+            #flush=True
         )
-        
-    
         
     def __getattr__(self, name):
         return self.log_file.__getattribute__(name)
