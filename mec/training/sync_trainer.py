@@ -18,7 +18,7 @@ from ..comms.transmit import DistEnv, TensorTransmittor
 from ..utils.logs import Logger
 from ..utils.monitor import Monitor
 from ..utils.history import History
-from ..configs.arguments import *
+from ..configs.default_config import conf_g
 
 class WorkerSync():
     """
@@ -45,11 +45,8 @@ class WorkerSync():
                  dataset_dict, batch_transform_dict, 
                  batch_size, process_num_per_loader,
                  rank, gpu_id, sync_worker_num, control_ip='127.0.0.1',
-                 port=12500):
-        self.printToLog = Logger(
-            filepath ='logs/worker_{}.log'.format(rank),
-            prefix   ='worker_{}|gpu_{}'.format(rank, gpu_id)
-        )
+                 port=12500, logger=print):
+        self.printToLog = logger
         rpc_port  = port
         dist_port = str(port+10)
         self.printToLog("initiating worker {} ...".format(rank))
@@ -59,17 +56,23 @@ class WorkerSync():
         self.printToLog("worker num :", sync_worker_num)
         self.world_size      = sync_worker_num
         self.printToLog('initiating data loader ...')
+        # for dataset_name in dataset_dict:
+        #     print(
+        #         "\ndataset_name:", dataset_name, dataset_dict[dataset_name],
+        #         "\nbatch_size:",  int(batch_size/self.world_size),
+        #         "\nsampler:",     DistributedSampler(dataset_dict[dataset_name], sync_worker_num, rank),
+        #         "\nnum_workers:", process_num_per_loader,
+        #     )
         self.dataloader_dict = {
             dataset_name: DataLoader(
                 dataset_dict[dataset_name],
                 batch_size  = int(batch_size/self.world_size),
                 sampler     = DistributedSampler(dataset_dict[dataset_name], sync_worker_num, rank),
-                num_workers = process_num_per_loader#,
-                #pin_memory  = True
+                num_workers = process_num_per_loader,
+                pin_memory  = True
             )
             for dataset_name in dataset_dict
         }
-        #if self.pid != os.getpid(): return # sub processes forked by Dataloader
         self.printToLog("initiating device")
         self.device          = torch.device('cuda:{}'.format(gpu_id))
         self.printToLog("device:", self.device)
@@ -103,7 +106,7 @@ class WorkerSync():
         self.rpc_server.registerMethod(self.loadModelWeights)
         # init rpc proxy last, after all preparations are ready
         self.printToLog('workers ready') 
-    
+            
     def mainLoop(self):
         self.rpc_server.mainLoop()
 
@@ -156,9 +159,15 @@ class WorkerSync():
         self.trainer.model.train()
         self.train_batch_index = 0
         self.printToLog("initializing train loader iter")
-        self.printToLog('dataloader length: ', self.dataloader_dict[dataset_name])
+        self.printToLog('dataloader length: ', len(self.dataloader_dict[dataset_name]) )
+        self.printToLog('dataloader dict: ', self.dataloader_dict)
         train_loader = self.dataloader_dict[dataset_name]
-        self.train_iter = iter(train_loader)
+        self.printToLog('dataloader: ', train_loader)
+        try:
+            self.train_iter = iter(train_loader)
+        except Exception as e:
+            print(e)
+        self.printToLog('dataloader iter', self.train_iter)
         if dataset_name in self.batch_transform_dict:
             self.train_batch_transform = self.batch_transform_dict[dataset_name]
             self.printToLog("setting up batch transforms")
@@ -256,18 +265,13 @@ class ControllerSync():
     """
     def __init__(self, 
             train_set_len, valid_set_len, batch_size, 
-            #init_epoch, total_epochs, metric_name,
-            #lr_scheduler, 
-            control_ip, port, sync_worker_num#,
-            #current_model_filename, best_model_filename, history_filename
+            control_ip, port, sync_worker_num,
+            logger=print
         ):
         rpc_port  = port
         dist_port = str(port+10)
         # 日志
-        self.printToLog = Logger(
-            filepath ='logs/controller.log',
-            prefix   ='controller'
-        )
+        self.printToLog = logger
         # 控制接口
         self.rpcWorkers   = SyncRpcController(control_ip, port, sync_worker_num, self.printToLog)
         #self.rpcWorkers.startWorking()
@@ -420,32 +424,34 @@ def startWorkerProcess(
         batch_size, process_num_per_loader,
         rank, gpu_id, 
         sync_worker_num, 
-        control_ip, 
-        port
+        control_ip, port
         ):
+    logger = Logger(
+            filepath ='logs/worker_{}.log'.format(rank),
+            prefix   ='worker_{}|gpu_{}'.format(rank, gpu_id)
+        )
     torch.cuda.set_device( gpu_id )
-    #os.environ['CUDA_VISIBLE_DEVICE']='{}'.format(gpu_id)
+    os.environ['CUDA_VISIBLE_DEVICE']='{}'.format(gpu_id)
     #time.sleep(3)
     worker = WorkerSync(
         model, optimizer, criterion, metrics, 
         dataset_dict, batch_transform_dict,
         batch_size, process_num_per_loader, rank, gpu_id,
-        sync_worker_num, control_ip,
-        port)
+        sync_worker_num, control_ip, port, logger)
     worker.mainLoop()
 
 def startWorkers(
         model, optimizer, criterion, metrics, 
         train_set, valid_set, 
-        batch_size=batch_size, 
-        sync_worker_num=1, 
-        process_num_per_loader=process_num_per_loader,
-        rank_list=worker_ranks, 
-        gpu_id_list=worker_gpu_ids, 
-        control_ip=control_ip, 
-        port=basic_port, 
-        train_batch_transform=None, 
-        valid_batch_transform=None
+        batch_size             = conf_g.batch_size, 
+        sync_worker_num        = conf_g.sync_worker_num, 
+        process_num_per_loader = conf_g.process_num_per_loader,
+        rank_list              = conf_g.worker_ranks, 
+        gpu_id_list            = conf_g.worker_gpu_ids, 
+        control_ip             = conf_g.control_ip, 
+        port                   = conf_g.basic_port, 
+        train_batch_transform  = None, 
+        valid_batch_transform  = None
     ):
     assert len(rank_list)==len(gpu_id_list), 'rank_list has different length from gpu_id_list'
     assert min(rank_list)>=0,                'rank must be greater than 0'
@@ -468,20 +474,28 @@ def startWorkers(
 def trainAndVal(
             train_set, valid_set, metrics, 
             batch_size, lr_scheduler, 
-            control_ip=control_ip, 
-            port=basic_port, 
-            sync_worker_num=sync_worker_num,
-            total_epochs=epochs, 
-            current_model_filename=model_filename, 
-            best_model_filename=best_model_filename,
-            history_filename=history_filename, 
-            continue_training=continue_training):
+            control_ip              = conf_g.control_ip, 
+            port                    = conf_g.basic_port, 
+            sync_worker_num         = conf_g.sync_worker_num,
+            total_epochs            = conf_g.epochs, 
+            current_model_filename  = conf_g.model_filename, 
+            best_model_filename     = conf_g.best_model_filename,
+            history_filename        = conf_g.history_filename, 
+            continue_training       = False):
+    logger = Logger(
+            filepath ='logs/controller.log',
+            prefix   ='controller'
+        )
     controller = ControllerSync(
         len(train_set), len(valid_set), batch_size,
-        control_ip, port, sync_worker_num,
+        control_ip, port, sync_worker_num, 
+        logger
     )
     history = History(history_filename)
-    if continue_training: history.loadHistory()
+    if continue_training: 
+        logger('restore from checkpoints')
+        history.loadHistory()
+        controller.loadModelWeight(current_model_filename)
     init_epoch = history.data['epochs']
     monitor = Monitor(
         init_epoch, 
@@ -490,11 +504,9 @@ def trainAndVal(
         int(np.ceil(len(valid_set)/batch_size) ), 
         metrics.name()
     )
-    controller.printToLog('waking workers')
+    logger('waking workers')
     controller.startWorking()
-    if continue_training:
-        controller.loadModelWeight(current_model_filename)
-    controller.printToLog('prepare to train')
+    logger('prepare to train')
     for epoch in range(init_epoch, init_epoch+total_epochs):
         lr = lr_scheduler(epoch)
         monitor.beginEpoch()
@@ -511,16 +523,17 @@ def trainAndVal(
 def trainAndValLocal(
         model, optimizer, criterion, metrics, 
         train_set, valid_set, 
-        batch_size=batch_size, 
-        lr_scheduler = lambda: learning_rate,
-        process_num_per_loader=process_num_per_loader,
-        rank_list=worker_ranks, 
-        gpu_id_list=worker_gpu_ids, 
-        control_ip=control_ip, 
-        port=basic_port, 
-        train_batch_transform=None, 
-        valid_batch_transform=None
+        batch_size             = conf_g.batch_size, 
+        lr_scheduler           = lambda: conf_g.learning_rate,
+        process_num_per_loader = conf_g.process_num_per_loader,
+        rank_list              = conf_g.worker_ranks, 
+        gpu_id_list            = conf_g.worker_gpu_ids,
+        control_ip             = conf_g.control_ip, 
+        port                   = conf_g.basic_port, 
+        train_batch_transform  = None, 
+        valid_batch_transform  = None
     ):
+    assert len(rank_list) == len(gpu_id_list), 'rank number not equal to gpu number'
     sync_worker_num=len(gpu_id_list)
     startWorkers(
         model, optimizer, criterion, metrics, train_set, valid_set, 

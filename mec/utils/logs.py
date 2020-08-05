@@ -16,8 +16,10 @@ class Logger():
                 print(e)
         self.prefix = '[' + prefix + '|{}]'
     
-    # def __del__(self):
-    #     self.log_file.close()
+    def __del__(self):
+        #self.log_file.close()
+        #self.log_file = sys.stderr
+        pass
 
     def __call__(self, *args, **kwargs):
         print(
@@ -27,8 +29,6 @@ class Logger():
             file=self.log_file#,
             #flush=True
         )
-        
-    
         
     def __getattr__(self, name):
         return self.log_file.__getattribute__(name)

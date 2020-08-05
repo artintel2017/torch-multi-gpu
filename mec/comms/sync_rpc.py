@@ -104,7 +104,7 @@ class SyncRpcController(SyncRpcBase):
         self.printToLog("socket initizating complete")
 
     def closeSocket(self):
-        self.printToLog("closing socket ...")
+        #self.printToLog("closing socket ...")
         if self.publish_socket != None:
             self.publish_socket.unbind(self.publish_addr)
             self.publish_socket = None
@@ -117,7 +117,7 @@ class SyncRpcController(SyncRpcBase):
         if self.check_socket !=None:
             self.check_socket.unbind(self.check_addr)
             self.check_socket = None
-        self.printToLog("socket closed")
+        #self.printToLog("socket closed")
 
     def _callMethod(self, name, *args, **kwargs):
         """
@@ -219,7 +219,7 @@ class SyncRpcController(SyncRpcBase):
                 workers_set = { rank }
             else: 
                 raise Exception('unhandled asynchronized signal, probably indicates disorder of workers, \
-                                try reboot all workers before start controllers')
+                                try start all workers before start controllers')
 
     
     def startWorking(self):
