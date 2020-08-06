@@ -22,15 +22,10 @@ from demo_dataset import train_set, valid_set
 # 预训练公开模型
 from torchvision.models.resnet import resnet50, resnet18
 
-def foo():
-    global train
-    train = True
-
 # 运行参数
 from configs import parse_configs
 parse_configs()
 from configs import *
-print(worker_gpu_ids)
 
 #print( [(k,eval(k)) for k in dir()] )  
 
@@ -66,8 +61,7 @@ def main():
         trainAndValLocal(
             model, opt, criterion, metrics, 
             train_set, valid_set, 
-            batch_size             = batch_size, 
-            lr_scheduler           = lr_scheduler,
+            batch_size, lr_scheduler, epochs,
             process_num_per_loader = process_num_per_loader,
             rank_list              = worker_ranks, 
             gpu_id_list            = worker_gpu_ids,

@@ -47,12 +47,7 @@ def parse_configs():
     global history_filename        
     global model_filename          
     global best_model_filename     
-    global excel_filename          
-    global control_ip              
-    global basic_port              
-    global worker_gpu_ids          
-    global worker_ranks            
-    global sync_worker_num         
+    global excel_filename               
     
     parser = argparse.ArgumentParser()
     parser.add_argument('-train', '--train', action='store_true',
@@ -104,7 +99,7 @@ def parse_configs():
         epochs = args.epochs
     if args.path:
         path = args.path
-        history_filename        = os.path.join(path, history_filename)
-        model_filename          = os.path.join(path, model_filename)
-        best_model_filename     = os.path.join(path, best_model_filename)
+    history_filename        = os.path.join(path, history_filename)
+    model_filename          = os.path.join(path, model_filename)
+    best_model_filename     = os.path.join(path, best_model_filename)
         

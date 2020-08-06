@@ -473,11 +473,10 @@ def startWorkers(
 # ==========================  ========================== 
 def trainAndVal(
             train_set, valid_set, metrics, 
-            batch_size, lr_scheduler, 
+            batch_size, lr_scheduler, total_epochs, 
             control_ip              = conf_g.control_ip, 
             port                    = conf_g.basic_port, 
             sync_worker_num         = conf_g.sync_worker_num,
-            total_epochs            = conf_g.epochs, 
             current_model_filename  = conf_g.model_filename, 
             best_model_filename     = conf_g.best_model_filename,
             history_filename        = conf_g.history_filename, 
@@ -523,8 +522,7 @@ def trainAndVal(
 def trainAndValLocal(
         model, optimizer, criterion, metrics, 
         train_set, valid_set, 
-        batch_size             = conf_g.batch_size, 
-        lr_scheduler           = lambda: conf_g.learning_rate,
+        batch_size, lr_scheduler, total_epochs,
         process_num_per_loader = conf_g.process_num_per_loader,
         rank_list              = conf_g.worker_ranks, 
         gpu_id_list            = conf_g.worker_gpu_ids,
@@ -543,7 +541,7 @@ def trainAndValLocal(
     )    
     trainAndVal(
             train_set, valid_set, metrics, 
-            batch_size, lr_scheduler, 
+            batch_size, lr_scheduler, total_epochs,
             control_ip=control_ip, 
             port=port, 
             sync_worker_num=sync_worker_num
