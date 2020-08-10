@@ -529,7 +529,8 @@ def trainAndValLocal(
         control_ip             = conf_g.control_ip, 
         port                   = conf_g.basic_port, 
         train_batch_transform  = None, 
-        valid_batch_transform  = None
+        valid_batch_transform  = None,
+        continue_training      = False
     ):
     assert len(rank_list) == len(gpu_id_list), 'rank number not equal to gpu number'
     sync_worker_num=len(gpu_id_list)
@@ -544,6 +545,7 @@ def trainAndValLocal(
             batch_size, lr_scheduler, total_epochs,
             control_ip=control_ip, 
             port=port, 
-            sync_worker_num=sync_worker_num
+            sync_worker_num=sync_worker_num,
+            continue_training = continue_training
         )
     pass
