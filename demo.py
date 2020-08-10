@@ -66,7 +66,8 @@ def main():
             rank_list              = worker_ranks, 
             gpu_id_list            = worker_gpu_ids,
             control_ip             = control_ip,
-            port                   = basic_port
+            port                   = basic_port,
+            continue_training      = continue_training
         )
         # startWorkers(
         #     model, opt, criterion, metrics, 

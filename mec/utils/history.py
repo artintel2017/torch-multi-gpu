@@ -26,7 +26,8 @@ class History:
         try:
             with open(self.filename) as file:
                 self.data = json.load(file)
-                print('loading successfule')
+                print('history loading successful')
+                print(self.data)
         except FileNotFoundError as e:
             self.printToLog('warining: training history record file not found')
         

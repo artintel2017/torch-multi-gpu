@@ -166,7 +166,8 @@ class WorkerSync():
         try:
             self.train_iter = iter(train_loader)
         except Exception as e:
-            print(e)
+            self.printToLog(e)
+            raise e
         self.printToLog('dataloader iter', self.train_iter)
         if dataset_name in self.batch_transform_dict:
             self.train_batch_transform = self.batch_transform_dict[dataset_name]
@@ -248,6 +249,7 @@ class WorkerSync():
         """
             从指定位置读取模型权重
         """
+        self.printToLog("rank", self.rank, ", loading model, ")
         self.printToLog("filename={}, rank={}".format(filename, rank) )
         if self.rank==rank or self.rank in rank_list:
             if not os.path.exists(filename): 
@@ -257,6 +259,7 @@ class WorkerSync():
                 self.trainer.loadModel(filename, map_location=self.device)
             except Exception as e:
                 self.printToLog(e)
+                raise e
 
     
 class ControllerSync():
@@ -413,7 +416,8 @@ class ControllerSync():
         self.printToLog('saving model')
         self.rpcWorkers.saveModelWeights(filename, rank)
     
-    def loadModelWeight(self, filename, rank=0):
+    def loadModelWeights(self, filename, rank=0):
+        self.printToLog('loading model')
         self.rpcWorkers.loadModelWeights(filename, rank)
         self.rpcWorkers.broadCastModelWeights(rank)
     
@@ -490,11 +494,16 @@ def trainAndVal(
         control_ip, port, sync_worker_num, 
         logger
     )
+    logger('waking workers')
+    controller.startWorking()
+    logger('prepare to train')
     history = History(history_filename)
     if continue_training: 
         logger('restore from checkpoints')
         history.loadHistory()
-        controller.loadModelWeight(current_model_filename)
+        logger("loading model, ", current_model_filename)
+        controller.loadModelWeights(current_model_filename)
+        logger("model weight loading complete")
     init_epoch = history.data['epochs']
     monitor = Monitor(
         init_epoch, 
@@ -503,9 +512,6 @@ def trainAndVal(
         int(np.ceil(len(valid_set)/batch_size) ), 
         metrics.name()
     )
-    logger('waking workers')
-    controller.startWorking()
-    logger('prepare to train')
     for epoch in range(init_epoch, init_epoch+total_epochs):
         lr = lr_scheduler(epoch)
         monitor.beginEpoch()
